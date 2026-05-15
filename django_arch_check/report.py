@@ -6,11 +6,17 @@ responsibility.
 
 Score calculation
 -----------------
-Start at 100.  Deduct per finding:
-    - ``warning``  → -5 points
-    - ``critical`` → -15 points
+Rate-based formula — scores finding *density*, not raw count:
 
-Score is clamped to [0, 100].
+    critical_rate = criticals / total_findings
+    warning_rate  = warnings  / total_findings
+    raw           = 100 - (critical_rate * 60) - (warning_rate * 40)
+    penalty       = min(30, criticals * 2 + warnings * 0.5)
+    score         = max(0, round(raw - penalty))
+
+A project with only criticals scores lower than one with only warnings
+at the same volume.  Large codebases with known technical debt are not
+automatically clamped to 0.
 """
 
 from __future__ import annotations
@@ -25,21 +31,55 @@ from django_arch_check.analyzer import AnalysisResult
 # Score
 # ---------------------------------------------------------------------------
 
-_WARNING_PENALTY = 5
+# Legacy per-finding penalty constants kept for the footer display only.
+_WARNING_PENALTY  = 5
 _CRITICAL_PENALTY = 15
 
 
 def compute_score(result: AnalysisResult) -> int:
-    """Return a health score 0–100 based on finding severities."""
-    deductions = 0
+    """Return a health score 0–100 using a rate-based formula.
+
+    The old per-finding deduction formula (100 - criticals*15 - warnings*5)
+    does not scale: large mature codebases with many known findings always
+    scored 0, making the metric meaningless.
+
+    This formula scores based on finding *density* rather than raw count:
+
+    1. ``critical_rate`` and ``warning_rate`` are each finding type's share
+       of the total finding count.  A project with mostly criticals scores
+       lower than one with mostly warnings, even at the same total.
+
+    2. An ``absolute_penalty`` (capped at 30) adds a modest deduction
+       proportional to raw counts so a project with 200 findings still
+       scores lower than one with 5 — but not catastrophically lower.
+
+    3. Score is rounded and clamped to [0, 100].
+    """
+    criticals = 0
+    warnings  = 0
     for findings in _all_findings(result):
         for f in findings:
             sev = getattr(f, "severity", None)
-            if sev == "warning":
-                deductions += _WARNING_PENALTY
-            elif sev == "critical":
-                deductions += _CRITICAL_PENALTY
-    return max(0, 100 - deductions)
+            if sev == "critical":
+                criticals += 1
+            elif sev == "warning":
+                warnings += 1
+
+    total_findings = criticals + warnings
+
+    if total_findings == 0:
+        return 100
+
+    critical_rate = criticals / total_findings
+    warning_rate  = warnings  / total_findings
+
+    raw = 100 - (critical_rate * 60) - (warning_rate * 40)
+
+    # Small absolute penalty so raw finding counts still matter, capped at 30
+    # so even very large projects can score above zero.
+    absolute_penalty = min(30, (criticals * 2) + (warnings * 0.5))
+
+    return max(0, round(raw - absolute_penalty))
 
 
 def _all_findings(result: AnalysisResult) -> list[list[object]]:
@@ -130,13 +170,13 @@ def _e(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 _SECTIONS: list[tuple[str, str]] = [
-    ("fat_models", "Fat Models"),
-    ("god_apps", "God Apps"),
-    ("circular_imports", "Circular Imports"),
-    ("missing_service_layer", "Missing Service Layer"),
-    ("celery_tasks", "Celery Tasks Without Retry"),
-    ("direct_sql", "Direct SQL"),
-    ("n_plus_one", "N+1 Query Risks"),
+    ("fat_models",           "Fat Models"),
+    ("god_apps",             "God Apps"),
+    ("circular_imports",     "Circular Imports"),
+    ("missing_service_layer","Missing Service Layer"),
+    ("celery_tasks",         "Celery Tasks Without Retry"),
+    ("direct_sql",           "Direct SQL"),
+    ("n_plus_one",           "N+1 Query Risks"),
 ]
 
 
@@ -183,13 +223,11 @@ def _render_section(title: str, findings: list[object]) -> str:
         </tr>"""
 
     count = len(findings)
-    crit = sum(1 for f in findings if getattr(f, "severity", "") == "critical")
-    warn = count - crit
+    crit  = sum(1 for f in findings if getattr(f, "severity", "") == "critical")
+    warn  = count - crit
     summary_parts = []
     if crit:
-        summary_parts.append(
-            f'<span class="badge badge-critical">{crit} critical</span>'
-        )
+        summary_parts.append(f'<span class="badge badge-critical">{crit} critical</span>')
     if warn:
         summary_parts.append(f'<span class="badge badge-warning">{warn} warning</span>')
 
@@ -219,24 +257,23 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     Returns:
         A complete HTML document as a string.
     """
-    score = compute_score(result)
-    score_color = _score_color(score)
-    score_label = _score_label(score)
+    score        = compute_score(result)
+    score_color  = _score_color(score)
+    score_label  = _score_label(score)
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    total_warnings = sum(
+    total_warnings  = sum(
         sum(1 for f in getattr(result, attr) if getattr(f, "severity", "") == "warning")
         for attr, _ in _SECTIONS
     )
     total_criticals = sum(
-        sum(
-            1 for f in getattr(result, attr) if getattr(f, "severity", "") == "critical"
-        )
+        sum(1 for f in getattr(result, attr) if getattr(f, "severity", "") == "critical")
         for attr, _ in _SECTIONS
     )
 
     sections_html = "\n".join(
-        _render_section(title, getattr(result, attr)) for attr, title in _SECTIONS
+        _render_section(title, getattr(result, attr))
+        for attr, title in _SECTIONS
     )
 
     return f"""<!DOCTYPE html>

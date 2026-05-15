@@ -35,8 +35,8 @@ from typing import Literal
 class CeleryTaskFinding:
     """A single Celery-task finding."""
 
-    file_path: str  # relative path, e.g. "payments/tasks.py"
-    task_name: str  # function name, e.g. "charge_customer"
+    file_path: str                      # relative path, e.g. "payments/tasks.py"
+    task_name: str                      # function name, e.g. "charge_customer"
     severity: Literal["warning", "critical"]
 
 
@@ -46,23 +46,11 @@ class CeleryTaskFinding:
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        ".git",
-        ".hg",
-        ".svn",
-        ".tox",
-        ".venv",
-        "venv",
-        "env",
-        ".env",
-        "__pycache__",
-        "node_modules",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pytest_cache",
-        "htmlcov",
-        "dist",
-        "build",
-        ".eggs",
+        ".git", ".hg", ".svn", ".tox",
+        ".venv", "venv", "env", ".env",
+        "__pycache__", "node_modules",
+        ".mypy_cache", ".ruff_cache", ".pytest_cache",
+        "htmlcov", "dist", "build", ".eggs",
     }
 )
 
@@ -76,11 +64,26 @@ _RETRY_KWARGS: frozenset[str] = frozenset(
 
 #: Substrings (case-insensitive) that make a task "high stakes".
 _HIGH_STAKES_KEYWORDS: tuple[str, ...] = (
-    "payment",
-    "email",
-    "invoice",
-    "notification",
+    "payment", "email", "invoice", "notification",
 )
+
+#: Path component that marks a file as a migration — excluded from scanning.
+_MIGRATIONS_DIR = "migrations"
+
+
+# ---------------------------------------------------------------------------
+# Migration path helper
+# ---------------------------------------------------------------------------
+
+
+def _is_migration_file(rel_path: str) -> bool:
+    """Return True when *rel_path* lives inside a ``migrations`` directory.
+
+    Normalises backslashes to forward slashes before splitting so the check
+    works correctly on Windows paths.
+    """
+    parts = rel_path.replace("\\", "/").split("/")
+    return _MIGRATIONS_DIR in parts
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +175,9 @@ def detect(project_path: str) -> list[CeleryTaskFinding]:
             full_path = os.path.join(dirpath, filename)
             rel_path = os.path.relpath(full_path, project_path)
 
+            if _is_migration_file(rel_path):
+                continue
+
             try:
                 with open(full_path, encoding="utf-8") as fh:
                     source = fh.read()
@@ -189,9 +195,7 @@ def detect(project_path: str) -> list[CeleryTaskFinding]:
                 if not node.decorator_list:
                     continue
 
-                task_decorators = [
-                    d for d in node.decorator_list if _is_task_decorator(d)
-                ]
+                task_decorators = [d for d in node.decorator_list if _is_task_decorator(d)]
                 if not task_decorators:
                     continue
 
