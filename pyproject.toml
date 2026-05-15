@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "django-arch-check"
+version = "0.1.0"
+description = "A CLI tool to detect architectural problems in Django projects."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Rajat Jog", email = "rajatjog1294@gmail.com" }]
+keywords = ["django", "architecture", "linting", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Framework :: Django",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.9",
+    "build>=1.2",
+    "twine>=5.0",
+]
+
+[project.scripts]
+django-arch-check = "django_arch_check.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/RJ-Gamer/django-arch-check"
+Issues = "https://github.com/RJ-Gamer/django-arch-check/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["django_arch_check"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
