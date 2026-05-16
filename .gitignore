@@ -43,3 +43,4 @@ Thumbs.db
 *.whl
 *.tar.gz
 arch-report.html
+AGENTS.md
