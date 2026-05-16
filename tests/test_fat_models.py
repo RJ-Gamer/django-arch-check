@@ -11,7 +11,6 @@ from tests.conftest import ProjectBuilder
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _model(class_name: str, base: str, methods: list[str], extra: str = "") -> str:
     """Build a minimal models.py source string."""
     lines = [
@@ -31,27 +30,26 @@ def _model(class_name: str, base: str, methods: list[str], extra: str = "") -> s
 # Severity thresholds (default threshold=10)
 # ---------------------------------------------------------------------------
 
-
-def test_critical_model_twenty_or_more_methods(proj: ProjectBuilder) -> None:
-    """Model with >= 20 non-dunder methods → critical."""
-    methods = [f"method_{i}" for i in range(20)]
+def test_critical_model_thirty_or_more_methods(proj: ProjectBuilder) -> None:
+    """Model with >= 30 non-dunder methods → critical (threshold=15, critical=15*2=30)."""
+    methods = [f"method_{i}" for i in range(30)]
     proj.write("app/models.py", _model("BigModel", "models.Model", methods))
     findings = detect(proj.path)
     assert len(findings) == 1
     f = findings[0]
     assert f.class_name == "BigModel"
-    assert f.method_count == 20
+    assert f.method_count == 30
     assert f.severity == "critical"
 
 
 def test_warning_model_between_threshold_and_critical(proj: ProjectBuilder) -> None:
-    """Model with 10-19 methods → warning."""
-    methods = [f"do_{i}" for i in range(12)]
+    """Model with 15-29 methods → warning (new default threshold is 15)."""
+    methods = [f"do_{i}" for i in range(17)]
     proj.write("app/models.py", _model("MediumModel", "models.Model", methods))
     findings = detect(proj.path)
     assert len(findings) == 1
     assert findings[0].severity == "warning"
-    assert findings[0].method_count == 12
+    assert findings[0].method_count == 17
 
 
 def test_clean_model_under_threshold(proj: ProjectBuilder) -> None:
@@ -63,20 +61,9 @@ def test_clean_model_under_threshold(proj: ProjectBuilder) -> None:
 
 def test_dunder_methods_not_counted(proj: ProjectBuilder) -> None:
     """__str__, __repr__, __init__ etc. must not be counted."""
-    dunders = [
-        "__str__",
-        "__repr__",
-        "__eq__",
-        "__hash__",
-        "__init__",
-        "__lt__",
-        "__gt__",
-        "__le__",
-        "__ge__",
-        "__ne__",
-        "__contains__",
-        "__len__",
-    ]  # 12 dunders
+    dunders = ["__str__", "__repr__", "__eq__", "__hash__", "__init__",
+               "__lt__", "__gt__", "__le__", "__ge__", "__ne__",
+               "__contains__", "__len__"]  # 12 dunders
     regular = ["get_name", "save_clean"]  # 2 regular — well under threshold
     all_methods = dunders + regular
     proj.write("app/models.py", _model("DunderModel", "models.Model", all_methods))
@@ -85,7 +72,7 @@ def test_dunder_methods_not_counted(proj: ProjectBuilder) -> None:
 
 def test_async_methods_are_counted(proj: ProjectBuilder) -> None:
     """async def methods count toward the threshold."""
-    sync_methods = [f"sync_m{i}" for i in range(5)]
+    sync_methods  = [f"sync_m{i}" for i in range(5)]
     async_methods = [f"    async def async_m{i}(self): pass" for i in range(15)]
     source = textwrap.dedent("""\
         from django.db import models
@@ -167,10 +154,8 @@ def test_multiple_models_in_one_file(proj: ProjectBuilder) -> None:
 def test_skip_dirs_not_traversed(proj: ProjectBuilder) -> None:
     """Models inside .venv or __pycache__ must not be scanned."""
     methods = [f"m_{i}" for i in range(20)]
-    proj.write(
-        ".venv/lib/myapp/models.py", _model("VenvModel", "models.Model", methods)
-    )
-    proj.write("__pycache__/models.py", _model("CacheModel", "models.Model", methods))
+    proj.write(".venv/lib/myapp/models.py", _model("VenvModel", "models.Model", methods))
+    proj.write("__pycache__/models.py",     _model("CacheModel", "models.Model", methods))
     assert detect(proj.path) == []
 
 
@@ -178,3 +163,4 @@ def test_syntax_error_file_skipped(proj: ProjectBuilder) -> None:
     """A file with a SyntaxError must be silently skipped."""
     proj.write("app/models.py", "this is not valid python )(][")
     assert detect(proj.path) == []
+    

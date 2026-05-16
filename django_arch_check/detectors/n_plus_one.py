@@ -11,10 +11,11 @@ Detection strategy
    a. Walk the function body looking for ``for`` loops and list
       comprehensions (``ListComp``).
    b. Inside each loop body, look for ORM call patterns:
-      - attribute access whose name is one of:
-        ``filter``, ``get``, ``all``, ``exclude``, ``select_related``,
-        ``prefetch_related``, ``first``, ``last``, ``values``,
-        ``values_list``, ``annotate``, ``aggregate``
+      - ``X.objects.method()`` — the full two-level attribute chain is
+        required so plain ``.get(`` on dicts/lists is not flagged.
+        Matched methods: ``filter``, ``get``, ``all``, ``exclude``,
+        ``first``, ``last``, ``values``, ``values_list``,
+        ``annotate``, ``aggregate``, ``count``
       - or variable names containing ``queryset``
    c. Before flagging, check whether ``select_related`` or
       ``prefetch_related`` appear anywhere **earlier** in the same
@@ -49,9 +50,9 @@ from typing import Literal
 class NPlusOneFinding:
     """A single N+1 query-risk finding."""
 
-    file_path: str  # relative path, e.g. "orders/views.py"
-    line_number: int  # 1-based line of the loop/comprehension
-    severity: Literal["warning"]  # always warning
+    file_path: str                  # relative path, e.g. "orders/views.py"
+    line_number: int                # 1-based line of the loop/comprehension
+    severity: Literal["warning"]    # always warning
 
 
 # ---------------------------------------------------------------------------
@@ -60,48 +61,31 @@ class NPlusOneFinding:
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        ".git",
-        ".hg",
-        ".svn",
-        ".tox",
-        ".venv",
-        "venv",
-        "env",
-        ".env",
-        "__pycache__",
-        "node_modules",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pytest_cache",
-        "htmlcov",
-        "dist",
-        "build",
-        ".eggs",
+        ".git", ".hg", ".svn", ".tox",
+        ".venv", "venv", "env", ".env",
+        "__pycache__", "node_modules",
+        ".mypy_cache", ".ruff_cache", ".pytest_cache",
+        "htmlcov", "dist", "build", ".eggs",
     }
 )
 
 #: File names to inspect.
 _TARGET_FILES: frozenset[str] = frozenset({"views.py", "serializers.py"})
 
-#: ORM queryset method names whose presence inside a loop signals N+1 risk.
+#: ORM queryset method names.  These are only flagged when preceded by
+#: ``.objects.`` — plain ``.get(`` on dicts/lists is intentionally excluded.
 _ORM_METHODS: frozenset[str] = frozenset(
     {
-        "filter",
-        "get",
-        "all",
-        "exclude",
-        "first",
-        "last",
-        "values",
-        "values_list",
-        "annotate",
-        "aggregate",
-        "count",
+        "filter", "get", "all", "exclude",
+        "first", "last", "values", "values_list",
+        "annotate", "aggregate", "count",
     }
 )
 
 #: Methods that indicate the queryset is already optimised.
-_PREFETCH_METHODS: frozenset[str] = frozenset({"select_related", "prefetch_related"})
+_PREFETCH_METHODS: frozenset[str] = frozenset(
+    {"select_related", "prefetch_related"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -123,17 +107,35 @@ def _collect_attr_names(nodes: list[ast.stmt]) -> set[str]:
     return names
 
 
+def _is_queryset_orm_call(node: ast.Attribute) -> bool:
+    """Return True only for ``X.objects.method(…)`` patterns.
+
+    Requires the two-level chain::
+
+        Order.objects.filter(...)
+        ↑ Name   ↑ Attribute("objects")  ↑ Attribute(attr in _ORM_METHODS)
+
+    This prevents plain dict/list ``.get(`` calls from being flagged.
+    """
+    if node.attr not in _ORM_METHODS:
+        return False
+    inner = node.value
+    if not isinstance(inner, ast.Attribute):
+        return False
+    return inner.attr == "objects"
+
+
 def _loop_has_orm_call(loop_body: list[ast.stmt]) -> bool:
-    """Return True if any statement in *loop_body* contains an ORM call.
+    """Return True if any statement in *loop_body* contains a queryset ORM call.
 
     Matches:
-    - Attribute access where ``node.attr`` is in :data:`_ORM_METHODS`.
+    - ``X.objects.method(…)`` — full two-level attribute chain only.
     - ``ast.Name`` nodes whose ``id`` contains the substring ``queryset``
       (case-insensitive).
     """
     for stmt in loop_body:
         for node in ast.walk(stmt):
-            if isinstance(node, ast.Attribute) and node.attr in _ORM_METHODS:
+            if isinstance(node, ast.Attribute) and _is_queryset_orm_call(node):
                 return True
             if isinstance(node, ast.Name) and "queryset" in node.id.lower():
                 return True
@@ -142,16 +144,16 @@ def _loop_has_orm_call(loop_body: list[ast.stmt]) -> bool:
 
 def _listcomp_has_orm_call(comp_node: ast.ListComp) -> bool:
     """Return True if the element or conditions of a list-comprehension
-    contain ORM calls."""
+    contain queryset ORM calls (``X.objects.method``)."""
     # Check the element expression
     for node in ast.walk(comp_node.elt):
-        if isinstance(node, ast.Attribute) and node.attr in _ORM_METHODS:
+        if isinstance(node, ast.Attribute) and _is_queryset_orm_call(node):
             return True
     # Check each generator's condition (ifs)
     for generator in comp_node.generators:
         for cond in generator.ifs:
             for node in ast.walk(cond):
-                if isinstance(node, ast.Attribute) and node.attr in _ORM_METHODS:
+                if isinstance(node, ast.Attribute) and _is_queryset_orm_call(node):
                     return True
     return False
 

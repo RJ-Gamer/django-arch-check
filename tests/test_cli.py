@@ -52,7 +52,7 @@ def _critical_project(proj: ProjectBuilder) -> str:
         (
             "from django.db import models\n"
             "class Order(models.Model):\n"
-            + "\n".join(f"    def m{i}(self): pass" for i in range(22))
+            + "\n".join(f"    def m{i}(self): pass" for i in range(30))
         ),
     )
     return proj.path

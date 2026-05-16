@@ -258,7 +258,7 @@ def main() -> None:
 )
 @click.option(
     "--fat-model-threshold",
-    default=10,
+    default=15,
     show_default=True,
     metavar="N",
     help="Flag models with >= N non-dunder methods.",

@@ -201,6 +201,6 @@ class TestGenerateHtml:
 
     def test_score_formula_in_footer(self) -> None:
         html = self._html()
-        # Footer explains the deduction amounts
-        assert "15" in html and "5" in html
+        # Footer explains the health score basis
+        assert "Health score based on finding severity and density" in html
         

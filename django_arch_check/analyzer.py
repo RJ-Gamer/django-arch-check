@@ -17,14 +17,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from django_arch_check.detectors import celery_tasks, circular_imports, direct_sql, fat_models, god_apps, missing_service_layer, n_plus_one
+from django_arch_check.detectors import (
+    celery_tasks,
+    circular_imports,
+    direct_sql,
+    fat_models,
+    god_apps,
+    missing_service_layer,
+    n_plus_one,
+)
+from django_arch_check.detectors.celery_tasks import CeleryTaskFinding
 from django_arch_check.detectors.circular_imports import CircularImportFinding
+from django_arch_check.detectors.direct_sql import DirectSQLFinding
 from django_arch_check.detectors.fat_models import FatModelFinding
 from django_arch_check.detectors.god_apps import GodAppFinding
-from django_arch_check.detectors.celery_tasks import CeleryTaskFinding
-from django_arch_check.detectors.direct_sql import DirectSQLFinding
-from django_arch_check.detectors.n_plus_one import NPlusOneFinding
 from django_arch_check.detectors.missing_service_layer import MissingServiceLayerFinding
+from django_arch_check.detectors.n_plus_one import NPlusOneFinding
 
 
 @dataclass
@@ -42,17 +50,15 @@ class AnalysisResult:
 
 def run_analysis(
     project_path: str,
-    fat_model_threshold: int = 10,
+    fat_model_threshold: int = 15,
     god_app_threshold: int = 30,
-    service_layer_threshold: int = 10,
 ) -> AnalysisResult:
     """Run all registered detectors against *project_path*.
 
     Args:
         project_path:        Root directory of the Django project.
         fat_model_threshold: Minimum method count to flag a model as fat.
-        god_app_threshold:        Minimum LOC-% share to flag an app as a god app.
-        service_layer_threshold: Function body lines above which an ORM view is critical.
+        god_app_threshold:   Minimum LOC-% share to flag an app as a god app.
 
     Returns:
         An :class:`AnalysisResult` containing findings from every detector.
@@ -61,7 +67,7 @@ def run_analysis(
         fat_models=fat_models.detect(project_path, threshold=fat_model_threshold),
         god_apps=god_apps.detect(project_path, threshold=god_app_threshold),
         circular_imports=circular_imports.detect(project_path),
-        missing_service_layer=missing_service_layer.detect(project_path, line_threshold=service_layer_threshold),
+        missing_service_layer=missing_service_layer.detect(project_path),
         celery_tasks=celery_tasks.detect(project_path),
         direct_sql=direct_sql.detect(project_path),
         n_plus_one=n_plus_one.detect(project_path),

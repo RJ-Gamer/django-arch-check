@@ -7,7 +7,9 @@ Severity thresholds (configurable via `threshold` parameter):
     - warning:  threshold     <= method_count < threshold * 2
     - critical: method_count >= threshold * 2
 
-Default threshold: 10 methods.
+Default threshold: 15 methods → warning at 15+, critical at 30+.
+
+Default threshold: 15 methods.
 """
 
 from __future__ import annotations
@@ -118,7 +120,7 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 )
 
 
-def detect(project_path: str, threshold: int = 10) -> list[FatModelFinding]:
+def detect(project_path: str, threshold: int = 15) -> list[FatModelFinding]:
     """Walk *project_path* and return all fat-model findings.
 
     Args:

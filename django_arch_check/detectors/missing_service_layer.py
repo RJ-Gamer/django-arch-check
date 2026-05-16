@@ -1,28 +1,21 @@
 """Missing Service Layer detector.
 
-Flags views that contain business logic that belongs in a service layer:
-    - Direct ORM manager calls (``Model.objects.*``) → ``warning``
-    - View methods exceeding the line threshold AND containing ORM calls
-      (proxy for "complex business logic in views") → ``critical``
+Flags views that contain business logic that belongs in a service layer
+by counting direct ORM calls (``Model.objects.*``) inside each view function.
 
 Detection strategy
 ------------------
 1. Find all ``views.py`` files in the project.
 2. Parse with AST.
 3. For each top-level function and each method inside a class:
-   a. Count the non-blank, non-comment source lines in the function body.
-   b. Walk the function's AST subtree looking for ORM call patterns:
-      ``<Name>.objects.<anything>`` — covers ``User.objects.filter(…)``,
-      ``Order.objects.get(…)``, etc.
-4. Apply severity rules:
-   - ``critical``: function has ORM calls **and** body lines > ``threshold``
-   - ``warning``:  function has ORM calls (regardless of length)
+   a. Count direct ORM calls: ``X.objects.filter/get/create/update/delete/all``
+   b. Apply severity rules based on ORM call count:
+      - ``warning``:  2 or more ORM calls in a single view function
+      - ``critical``: 4 or more ORM calls in a single view function
 
-"Body lines" are counted from the source directly using ``ast.get_source_segment``
-where available (Python 3.8+), falling back to a line-range heuristic.
-
-No threshold CLI flag is required by the spec; ``threshold`` (default 10) is an
-internal constant that can be passed to ``detect()`` if desired.
+Using ORM call *count* rather than line count avoids false positives on
+views that are long only because of context dictionary building
+(e.g. many ``context['key'] = value`` assignments).
 """
 
 from __future__ import annotations
@@ -41,10 +34,10 @@ from typing import Literal
 class MissingServiceLayerFinding:
     """A single missing-service-layer finding."""
 
-    file_path: str  # relative path, e.g. "orders/views.py"
-    view_name: str  # "create_order" or "OrderView.post"
-    line_count: int  # non-blank, non-comment lines in the function body
-    has_orm_calls: bool
+    file_path: str          # relative path, e.g. "orders/views.py"
+    view_name: str          # "create_order" or "OrderView.post"
+    orm_call_count: int     # number of X.objects.* calls found in the function
+    has_orm_calls: bool     # always True for any finding (kept for compatibility)
     severity: Literal["warning", "critical"]
 
 
@@ -54,27 +47,19 @@ class MissingServiceLayerFinding:
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        ".git",
-        ".hg",
-        ".svn",
-        ".tox",
-        ".venv",
-        "venv",
-        "env",
-        ".env",
-        "__pycache__",
-        "node_modules",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pytest_cache",
-        "htmlcov",
-        "dist",
-        "build",
-        ".eggs",
+        ".git", ".hg", ".svn", ".tox",
+        ".venv", "venv", "env", ".env",
+        "__pycache__", "node_modules",
+        ".mypy_cache", ".ruff_cache", ".pytest_cache",
+        "htmlcov", "dist", "build", ".eggs",
     }
 )
 
-_DEFAULT_LINE_THRESHOLD = 10
+#: Minimum ORM call count to emit a warning.
+_WARNING_ORM_THRESHOLD = 2
+
+#: Minimum ORM call count to escalate to critical.
+_CRITICAL_ORM_THRESHOLD = 4
 
 
 # ---------------------------------------------------------------------------
@@ -108,24 +93,31 @@ def _has_orm_calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Line-count helper
+# ORM call count helper
 # ---------------------------------------------------------------------------
 
 
-def _count_body_lines(
+def _count_orm_calls(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-    source_lines: list[str],
 ) -> int:
-    """Count non-blank, non-comment lines in the function body.
+    """Count ``X.objects.Y(…)`` call patterns in the function body.
 
-    Uses the AST line numbers to extract the relevant slice of source, then
-    applies the same heuristic as the god-app LOC counter.
+    Each occurrence of the two-level attribute chain
+    ``<Name>.objects.<method>`` counts as one ORM call.  This is the same
+    pattern used by ``_has_orm_calls`` but returns a count instead of a bool.
     """
-    # ast line numbers are 1-based; end_lineno is inclusive
-    start = func_node.body[0].lineno - 1  # first statement in body
-    end = func_node.end_lineno  # last line of the function (1-based, inclusive)
-    body_lines = source_lines[start:end]
-    return sum(1 for raw in body_lines if (s := raw.strip()) and not s.startswith("#"))
+    count = 0
+    for node in ast.walk(func_node):
+        if not isinstance(node, ast.Attribute):
+            continue
+        inner = node.value
+        if not isinstance(inner, ast.Attribute):
+            continue
+        if inner.attr != "objects":
+            continue
+        if isinstance(inner.value, ast.Name):
+            count += 1
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -163,16 +155,19 @@ def _iter_view_functions(
 
 
 def _severity(
-    has_orm: bool,
-    line_count: int,
-    threshold: int,
+    orm_call_count: int,
 ) -> Literal["warning", "critical"] | None:
-    """Return severity, or ``None`` if the function should not be flagged."""
-    if not has_orm:
-        return None
-    if line_count > threshold:
+    """Return severity based on ORM call count, or ``None`` if below threshold.
+
+    - ``None``     — fewer than :data:`_WARNING_ORM_THRESHOLD` ORM calls
+    - ``warning``  — :data:`_WARNING_ORM_THRESHOLD` or more ORM calls
+    - ``critical`` — :data:`_CRITICAL_ORM_THRESHOLD` or more ORM calls
+    """
+    if orm_call_count >= _CRITICAL_ORM_THRESHOLD:
         return "critical"
-    return "warning"
+    if orm_call_count >= _WARNING_ORM_THRESHOLD:
+        return "warning"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -182,17 +177,15 @@ def _severity(
 
 def detect(
     project_path: str,
-    line_threshold: int = _DEFAULT_LINE_THRESHOLD,
 ) -> list[MissingServiceLayerFinding]:
     """Walk *project_path* and return all missing-service-layer findings.
 
     Args:
-        project_path:   Root directory of the Django project to analyse.
-        line_threshold: Function body lines above which an ORM-using view
-                        is escalated from ``warning`` to ``critical``.
+        project_path: Root directory of the Django project to analyse.
 
     Returns:
-        A list of :class:`MissingServiceLayerFinding` instances.
+        A list of :class:`MissingServiceLayerFinding` instances for every
+        view function with 2 or more direct ORM calls.
     """
     findings: list[MissingServiceLayerFinding] = []
 
@@ -217,12 +210,9 @@ def detect(
             except SyntaxError:
                 continue
 
-            source_lines = source.splitlines()
-
             for view_name, func_node in _iter_view_functions(tree):
-                has_orm = _has_orm_calls(func_node)
-                line_count = _count_body_lines(func_node, source_lines)
-                sev = _severity(has_orm, line_count, line_threshold)
+                orm_count = _count_orm_calls(func_node)
+                sev = _severity(orm_count)
 
                 if sev is None:
                     continue
@@ -231,8 +221,8 @@ def detect(
                     MissingServiceLayerFinding(
                         file_path=rel_path,
                         view_name=view_name,
-                        line_count=line_count,
-                        has_orm_calls=has_orm,
+                        orm_call_count=orm_count,
+                        has_orm_calls=True,
                         severity=sev,
                     )
                 )
