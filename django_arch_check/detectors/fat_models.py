@@ -19,6 +19,8 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from django_arch_check.detectors import filter_dirnames, should_ignore_file
+
 # ---------------------------------------------------------------------------
 # Public data types
 # ---------------------------------------------------------------------------
@@ -120,7 +122,11 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 )
 
 
-def detect(project_path: str, threshold: int = 15) -> list[FatModelFinding]:
+def detect(
+    project_path: str,
+    threshold: int = 15,
+    ignore_paths: tuple[str, ...] = (),
+) -> list[FatModelFinding]:
     """Walk *project_path* and return all fat-model findings.
 
     Args:
@@ -138,7 +144,7 @@ def detect(project_path: str, threshold: int = 15) -> list[FatModelFinding]:
 
     for dirpath, dirnames, filenames in os.walk(project_path):
         # Prune traversal in-place so os.walk never descends into these dirs.
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        filter_dirnames(project_path, dirpath, dirnames, _SKIP_DIRS, ignore_paths)
 
         for filename in filenames:
             if not filename.endswith(".py"):
@@ -147,6 +153,8 @@ def detect(project_path: str, threshold: int = 15) -> list[FatModelFinding]:
             full_path = os.path.join(dirpath, filename)
             # Use a relative path in findings so output is not machine-specific.
             rel_path = os.path.relpath(full_path, project_path)
+            if should_ignore_file(rel_path, ignore_paths):
+                continue
 
             try:
                 source = _read_source(full_path)

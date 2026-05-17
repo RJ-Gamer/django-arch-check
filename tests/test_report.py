@@ -184,6 +184,11 @@ class TestGenerateHtml:
         html = self._html(_empty_result())
         assert "No issues found" in html
 
+    def test_skipped_section_shows_ignore_note(self) -> None:
+        html = self._html(AnalysisResult(skipped_detectors=("fat_models",)))
+        assert "Fat Models" in html
+        assert "⊘ Skipped (--ignore flag)" in html
+
     def test_critical_badge_present_when_critical_finding(self) -> None:
         result = AnalysisResult(circular_imports=[_critical_circular()])
         html = generate_html(result, "/project")

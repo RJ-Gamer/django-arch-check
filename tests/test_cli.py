@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 from click.testing import CliRunner
 
+from django_arch_check import analyzer
 from django_arch_check.cli import main
 from tests.conftest import ProjectBuilder
 
@@ -212,5 +214,80 @@ def test_invalid_path_exits_nonzero() -> None:
 
 def test_help_shows_all_options(proj: ProjectBuilder) -> None:
     result = run("analyze", "--help")
-    for option in ["--fat-model-threshold", "--god-app-threshold", "--format"]:
+    for option in [
+        "--fat-model-threshold",
+        "--god-app-threshold",
+        "--ignore",
+        "--ignore-path",
+        "--format",
+    ]:
         assert option in result.output
+
+
+def test_ignore_invalid_detector_name_shows_clear_error(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    result = run("analyze", "--ignore", "fat_modelz", proj_path=path)
+    assert result.exit_code != 0
+    assert "Error: Unknown detector 'fat_modelz'." in result.output
+    assert "Valid detectors are: fat_models, god_apps," in result.output
+
+
+def test_ignore_detector_skips_it_entirely(
+    monkeypatch: object,
+    proj: ProjectBuilder,
+) -> None:
+    path = _clean_project(proj)
+    skipped = Mock(return_value=[])
+    called = Mock(return_value=[])
+
+    monkeypatch.setattr(analyzer.fat_models, "detect", skipped)
+    monkeypatch.setattr(analyzer.god_apps, "detect", called)
+    monkeypatch.setattr(analyzer.circular_imports, "detect", called)
+    monkeypatch.setattr(analyzer.missing_service_layer, "detect", called)
+    monkeypatch.setattr(analyzer.celery_tasks, "detect", called)
+    monkeypatch.setattr(analyzer.direct_sql, "detect", called)
+    monkeypatch.setattr(analyzer.n_plus_one, "detect", called)
+
+    result = run("analyze", "--ignore", "fat_models", proj_path=path)
+
+    assert result.exit_code == 0
+    skipped.assert_not_called()
+    assert called.call_count == 6
+    assert "⊘ Skipped (--ignore flag)" in result.output
+
+
+def test_ignore_path_skips_matching_files(proj: ProjectBuilder) -> None:
+    proj.write("legacy/__init__.py", "")
+    proj.write(
+        "legacy/models.py",
+        (
+            "from django.db import models\n"
+            "class LegacyOrder(models.Model):\n"
+            + "\n".join(f"    def m{i}(self): pass" for i in range(30))
+        ),
+    )
+    proj.write("live/__init__.py", "")
+    proj.write(
+        "live/models.py",
+        (
+            "from django.db import models\n"
+            "class LiveOrder(models.Model):\n"
+            + "\n".join(f"    def m{i}(self): pass" for i in range(30))
+        ),
+    )
+
+    result = run("analyze", "--ignore-path", "legacy/", proj_path=proj.path)
+
+    assert result.exit_code == 1
+    assert "LegacyOrder" not in result.output
+    assert "legacy/models.py" not in result.output
+    assert "LiveOrder" in result.output
+
+
+def test_ignore_detector_note_appears_in_html_report(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    run("analyze", "--ignore", "celery_tasks", "--format", "html", proj_path=path)
+    report = Path(path) / "arch-report.html"
+    content = report.read_text(encoding="utf-8")
+    assert "Celery Tasks Without Retry" in content
+    assert "⊘ Skipped (--ignore flag)" in content

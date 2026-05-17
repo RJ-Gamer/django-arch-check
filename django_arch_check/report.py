@@ -205,7 +205,14 @@ def _badge(severity: str) -> str:
     return f'<span class="badge badge-{severity}">{severity.upper()}</span>'
 
 
-def _render_section(title: str, findings: list[object]) -> str:
+def _render_section(title: str, findings: list[object], skipped: bool = False) -> str:
+    if skipped:
+        return f"""
+    <section>
+      <h2>{_e(title)}</h2>
+      <p class="skipped">⊘ Skipped (--ignore flag)</p>
+    </section>"""
+
     if not findings:
         return f"""
     <section>
@@ -272,7 +279,11 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     )
 
     sections_html = "\n".join(
-        _render_section(title, getattr(result, attr))
+        _render_section(
+            title,
+            getattr(result, attr),
+            skipped=attr in result.skipped_detectors,
+        )
         for attr, title in _SECTIONS
     )
 
@@ -411,6 +422,12 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     .clean {{
       padding: 0.75rem 1rem;
       color: var(--green);
+      font-size: 0.82rem;
+      font-weight: 500;
+    }}
+    .skipped {{
+      padding: 0.75rem 1rem;
+      color: var(--grey);
       font-size: 0.82rem;
       font-weight: 500;
     }}

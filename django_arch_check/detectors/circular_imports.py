@@ -19,6 +19,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
+from django_arch_check.detectors import filter_dirnames, should_ignore_file
+
 # ---------------------------------------------------------------------------
 # Public data types
 # ---------------------------------------------------------------------------
@@ -260,7 +262,10 @@ def _canonical_cycle(cycle: list[str]) -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 
 
-def detect(project_path: str) -> list[CircularImportFinding]:
+def detect(
+    project_path: str,
+    ignore_paths: tuple[str, ...] = (),
+) -> list[CircularImportFinding]:
     """Walk *project_path*, build a module dependency graph, and return all
     circular-import findings.
 
@@ -278,12 +283,14 @@ def detect(project_path: str) -> list[CircularImportFinding]:
     is_init_map: dict[str, bool] = {}  # "orders" → True (for __init__ files)
 
     for dirpath, dirnames, filenames in os.walk(project_path):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        filter_dirnames(project_path, dirpath, dirnames, _SKIP_DIRS, ignore_paths)
         for filename in filenames:
             if not filename.endswith(".py"):
                 continue
             full_path = os.path.join(dirpath, filename)
             rel_path = os.path.relpath(full_path, project_path)
+            if should_ignore_file(rel_path, ignore_paths):
+                continue
             module_name = _file_to_module(rel_path)
             module_map[module_name] = rel_path
             is_init_map[module_name] = _is_init_file(rel_path)

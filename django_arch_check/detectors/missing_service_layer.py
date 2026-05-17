@@ -25,6 +25,8 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from django_arch_check.detectors import filter_dirnames, should_ignore_file
+
 # ---------------------------------------------------------------------------
 # Public data types
 # ---------------------------------------------------------------------------
@@ -177,6 +179,7 @@ def _severity(
 
 def detect(
     project_path: str,
+    ignore_paths: tuple[str, ...] = (),
 ) -> list[MissingServiceLayerFinding]:
     """Walk *project_path* and return all missing-service-layer findings.
 
@@ -190,7 +193,7 @@ def detect(
     findings: list[MissingServiceLayerFinding] = []
 
     for dirpath, dirnames, filenames in os.walk(project_path):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        filter_dirnames(project_path, dirpath, dirnames, _SKIP_DIRS, ignore_paths)
 
         for filename in filenames:
             if filename != "views.py":
@@ -198,6 +201,8 @@ def detect(
 
             full_path = os.path.join(dirpath, filename)
             rel_path = os.path.relpath(full_path, project_path)
+            if should_ignore_file(rel_path, ignore_paths):
+                continue
 
             try:
                 with open(full_path, encoding="utf-8") as fh:

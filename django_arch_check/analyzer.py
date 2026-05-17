@@ -16,6 +16,7 @@ To add a new detector:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Final
 
 from django_arch_check.detectors import (
     celery_tasks,
@@ -34,6 +35,27 @@ from django_arch_check.detectors.god_apps import GodAppFinding
 from django_arch_check.detectors.missing_service_layer import MissingServiceLayerFinding
 from django_arch_check.detectors.n_plus_one import NPlusOneFinding
 
+VALID_DETECTORS: Final[tuple[str, ...]] = (
+    "fat_models",
+    "god_apps",
+    "circular_imports",
+    "missing_service_layer",
+    "celery_tasks",
+    "direct_sql",
+    "n_plus_one",
+)
+
+
+def validate_ignored_detectors(ignored_detectors: tuple[str, ...]) -> tuple[str, ...]:
+    """Validate and de-duplicate ignored detector names."""
+    unknown = [name for name in ignored_detectors if name not in VALID_DETECTORS]
+    if unknown:
+        valid = ", ".join(VALID_DETECTORS)
+        raise ValueError(
+            f"Unknown detector '{unknown[0]}'. Valid detectors are: {valid}"
+        )
+    return tuple(dict.fromkeys(ignored_detectors))
+
 
 @dataclass
 class AnalysisResult:
@@ -46,12 +68,15 @@ class AnalysisResult:
     celery_tasks: list[CeleryTaskFinding] = field(default_factory=list)
     direct_sql: list[DirectSQLFinding] = field(default_factory=list)
     n_plus_one: list[NPlusOneFinding] = field(default_factory=list)
+    skipped_detectors: tuple[str, ...] = ()
 
 
 def run_analysis(
     project_path: str,
     fat_model_threshold: int = 15,
     god_app_threshold: int = 30,
+    ignored_detectors: tuple[str, ...] = (),
+    ignore_paths: tuple[str, ...] = (),
 ) -> AnalysisResult:
     """Run all registered detectors against *project_path*.
 
@@ -59,16 +84,61 @@ def run_analysis(
         project_path:        Root directory of the Django project.
         fat_model_threshold: Minimum method count to flag a model as fat.
         god_app_threshold:   Minimum LOC-% share to flag an app as a god app.
+        ignored_detectors:   Detector names to skip entirely.
+        ignore_paths:        File-path substrings to exclude from all detectors.
 
     Returns:
         An :class:`AnalysisResult` containing findings from every detector.
     """
+    ignored_detectors = validate_ignored_detectors(ignored_detectors)
+    ignored_set = set(ignored_detectors)
+    ignore_paths = tuple(dict.fromkeys(ignore_paths))
+
     return AnalysisResult(
-        fat_models=fat_models.detect(project_path, threshold=fat_model_threshold),
-        god_apps=god_apps.detect(project_path, threshold=god_app_threshold),
-        circular_imports=circular_imports.detect(project_path),
-        missing_service_layer=missing_service_layer.detect(project_path),
-        celery_tasks=celery_tasks.detect(project_path),
-        direct_sql=direct_sql.detect(project_path),
-        n_plus_one=n_plus_one.detect(project_path),
+        fat_models=(
+            []
+            if "fat_models" in ignored_set
+            else fat_models.detect(
+                project_path,
+                threshold=fat_model_threshold,
+                ignore_paths=ignore_paths,
+            )
+        ),
+        god_apps=(
+            []
+            if "god_apps" in ignored_set
+            else god_apps.detect(
+                project_path,
+                threshold=god_app_threshold,
+                ignore_paths=ignore_paths,
+            )
+        ),
+        circular_imports=(
+            []
+            if "circular_imports" in ignored_set
+            else circular_imports.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        missing_service_layer=(
+            []
+            if "missing_service_layer" in ignored_set
+            else missing_service_layer.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        celery_tasks=(
+            []
+            if "celery_tasks" in ignored_set
+            else celery_tasks.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        direct_sql=(
+            []
+            if "direct_sql" in ignored_set
+            else direct_sql.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        n_plus_one=(
+            []
+            if "n_plus_one" in ignored_set
+            else n_plus_one.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        skipped_detectors=tuple(
+            detector for detector in VALID_DETECTORS if detector in ignored_set
+        ),
     )

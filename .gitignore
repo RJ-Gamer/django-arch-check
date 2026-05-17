@@ -44,3 +44,4 @@ Thumbs.db
 *.tar.gz
 arch-report.html
 AGENTS.md
+graphify-out/

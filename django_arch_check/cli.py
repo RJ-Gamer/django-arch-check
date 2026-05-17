@@ -7,7 +7,11 @@ import sys
 import click
 
 from django_arch_check import __version__
-from django_arch_check.analyzer import AnalysisResult, run_analysis
+from django_arch_check.analyzer import (
+    AnalysisResult,
+    run_analysis,
+    validate_ignored_detectors,
+)
 from django_arch_check.report import generate_html
 
 # ---------------------------------------------------------------------------
@@ -28,6 +32,11 @@ def _severity_label(severity: str) -> str:
     return click.style(label, **_SEVERITY_STYLE.get(severity, {}))  # type: ignore[arg-type]
 
 
+def _is_skipped(result: AnalysisResult, detector_name: str) -> bool:
+    """Return True if the detector was skipped for this analysis run."""
+    return detector_name in result.skipped_detectors
+
+
 # ---------------------------------------------------------------------------
 # Section printers
 # ---------------------------------------------------------------------------
@@ -39,6 +48,10 @@ def _print_fat_models(result: AnalysisResult) -> None:
 
     click.echo()
     click.echo(click.style("── Fat Models ──────────────────────────────", bold=True))
+
+    if _is_skipped(result, "fat_models"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
 
     if not findings:
         click.echo(click.style("  No fat models found.", fg="green"))
@@ -65,6 +78,10 @@ def _print_god_apps(result: AnalysisResult) -> None:
 
     click.echo()
     click.echo(click.style("── God Apps ────────────────────────────────", bold=True))
+
+    if _is_skipped(result, "god_apps"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
 
     if not findings:
         click.echo(click.style("  No god apps found.", fg="green"))
@@ -93,6 +110,10 @@ def _print_circular_imports(result: AnalysisResult) -> None:
     click.echo()
     click.echo(click.style("── Circular Imports ────────────────────────", bold=True))
 
+    if _is_skipped(result, "circular_imports"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
+
     if not findings:
         click.echo(click.style("  No circular imports found.", fg="green"))
         return
@@ -115,6 +136,10 @@ def _print_missing_service_layer(result: AnalysisResult) -> None:
 
     click.echo()
     click.echo(click.style("── Missing Service Layer ────────────────────", bold=True))
+
+    if _is_skipped(result, "missing_service_layer"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
 
     if not findings:
         click.echo(click.style("  No missing service layer issues found.", fg="green"))
@@ -149,6 +174,10 @@ def _print_celery_tasks(result: AnalysisResult) -> None:
     click.echo()
     click.echo(click.style("── Celery Tasks Without Retry ──────────────", bold=True))
 
+    if _is_skipped(result, "celery_tasks"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
+
     if not findings:
         click.echo(click.style("  No Celery tasks missing retry config.", fg="green"))
         return
@@ -182,6 +211,10 @@ def _print_direct_sql(result: AnalysisResult) -> None:
     click.echo()
     click.echo(click.style("── Direct SQL ──────────────────────────────", bold=True))
 
+    if _is_skipped(result, "direct_sql"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
+
     if not findings:
         click.echo(click.style("  No direct SQL usage found.", fg="green"))
         return
@@ -204,6 +237,10 @@ def _print_n_plus_one(result: AnalysisResult) -> None:
 
     click.echo()
     click.echo(click.style("── N+1 Query Risks ─────────────────────────", bold=True))
+
+    if _is_skipped(result, "n_plus_one"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
 
     if not findings:
         click.echo(click.style("  No N+1 query risks found.", fg="green"))
@@ -271,6 +308,20 @@ def main() -> None:
     help="Flag apps owning >= PCT% of total project LOC.",
 )
 @click.option(
+    "--ignore",
+    "ignored_detectors",
+    multiple=True,
+    metavar="DETECTOR",
+    help="Ignore a detector by name. Repeatable.",
+)
+@click.option(
+    "--ignore-path",
+    "ignore_paths",
+    multiple=True,
+    metavar="PATH",
+    help="Skip files whose path contains PATH. Repeatable.",
+)
+@click.option(
     "--format",
     "output_format",
     type=click.Choice(["text", "html"], case_sensitive=False),
@@ -282,15 +333,24 @@ def analyze(
     project_path: str,
     fat_model_threshold: int,
     god_app_threshold: int,
+    ignored_detectors: tuple[str, ...],
+    ignore_paths: tuple[str, ...],
     output_format: str,
 ) -> None:
     """Analyze a Django project at PROJECT_PATH for architectural issues."""
+    try:
+        ignored_detectors = validate_ignored_detectors(ignored_detectors)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
     click.echo(click.style(f"Analyzing: {project_path}", bold=True))
 
     result = run_analysis(
         project_path,
         fat_model_threshold=fat_model_threshold,
         god_app_threshold=god_app_threshold,
+        ignored_detectors=ignored_detectors,
+        ignore_paths=ignore_paths,
     )
 
     if output_format == "html":

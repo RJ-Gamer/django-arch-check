@@ -25,6 +25,8 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from django_arch_check.detectors import filter_dirnames, should_ignore_file
+
 # ---------------------------------------------------------------------------
 # Public data types
 # ---------------------------------------------------------------------------
@@ -80,7 +82,11 @@ _APP_MARKERS: frozenset[str] = frozenset({"models.py", "apps.py"})
 # ---------------------------------------------------------------------------
 
 
-def _collect_py_files(root: str) -> list[str]:
+def _collect_py_files(
+    root: str,
+    project_path: str,
+    ignore_paths: tuple[str, ...],
+) -> list[str]:
     """Return absolute paths of all ``.py`` files under *root*.
 
     Prunes :data:`_SKIP_DIRS` so virtual-env and cache directories are
@@ -88,10 +94,15 @@ def _collect_py_files(root: str) -> list[str]:
     """
     result: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        filter_dirnames(project_path, dirpath, dirnames, _SKIP_DIRS, ignore_paths)
         for filename in filenames:
-            if filename.endswith(".py"):
-                result.append(os.path.join(dirpath, filename))
+            if not filename.endswith(".py"):
+                continue
+            full_path = os.path.join(dirpath, filename)
+            rel_path = os.path.relpath(full_path, project_path)
+            if should_ignore_file(rel_path, ignore_paths):
+                continue
+            result.append(full_path)
     return result
 
 
@@ -111,7 +122,7 @@ def _count_loc(file_path: str) -> int:
         return 0
 
 
-def _find_app_dirs(project_path: str) -> list[str]:
+def _find_app_dirs(project_path: str, ignore_paths: tuple[str, ...]) -> list[str]:
     """Return absolute paths of all Django app directories under *project_path*.
 
     A directory qualifies as a Django app if it contains at least one of
@@ -119,8 +130,16 @@ def _find_app_dirs(project_path: str) -> list[str]:
     """
     app_dirs: list[str] = []
     for dirpath, dirnames, filenames in os.walk(project_path):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
-        if _APP_MARKERS & set(filenames):
+        filter_dirnames(project_path, dirpath, dirnames, _SKIP_DIRS, ignore_paths)
+        visible_files = {
+            filename
+            for filename in filenames
+            if not should_ignore_file(
+                os.path.relpath(os.path.join(dirpath, filename), project_path),
+                ignore_paths,
+            )
+        }
+        if _APP_MARKERS & visible_files:
             app_dirs.append(dirpath)
     return app_dirs
 
@@ -146,7 +165,11 @@ def _to_display_path(abs_app_dir: str, project_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def detect(project_path: str, threshold: int = 30) -> list[GodAppFinding]:
+def detect(
+    project_path: str,
+    threshold: int = 30,
+    ignore_paths: tuple[str, ...] = (),
+) -> list[GodAppFinding]:
     """Walk *project_path* and return all god-app findings.
 
     Args:
@@ -163,7 +186,7 @@ def detect(project_path: str, threshold: int = 30) -> list[GodAppFinding]:
     # ------------------------------------------------------------------
     # 1. Count total project LOC (denominator for all percentages).
     # ------------------------------------------------------------------
-    all_py_files = _collect_py_files(project_path)
+    all_py_files = _collect_py_files(project_path, project_path, ignore_paths)
     total_loc = sum(_count_loc(f) for f in all_py_files)
 
     if total_loc == 0:
@@ -172,7 +195,7 @@ def detect(project_path: str, threshold: int = 30) -> list[GodAppFinding]:
     # ------------------------------------------------------------------
     # 2. Discover Django apps and count their LOC.
     # ------------------------------------------------------------------
-    app_dirs = _find_app_dirs(project_path)
+    app_dirs = _find_app_dirs(project_path, ignore_paths)
 
     # A single-app project owns 100% of its own code by definition.
     # That is not a structural smell — it is just a small project.
@@ -183,7 +206,7 @@ def detect(project_path: str, threshold: int = 30) -> list[GodAppFinding]:
     findings: list[GodAppFinding] = []
 
     for app_dir in app_dirs:
-        app_files = _collect_py_files(app_dir)
+        app_files = _collect_py_files(app_dir, project_path, ignore_paths)
         app_loc = sum(_count_loc(f) for f in app_files)
         percentage = round(app_loc / total_loc * 100)
 

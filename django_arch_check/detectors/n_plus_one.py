@@ -41,6 +41,8 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from django_arch_check.detectors import filter_dirnames, should_ignore_file
+
 # ---------------------------------------------------------------------------
 # Public data types
 # ---------------------------------------------------------------------------
@@ -212,7 +214,10 @@ def _check_function(
 # ---------------------------------------------------------------------------
 
 
-def detect(project_path: str) -> list[NPlusOneFinding]:
+def detect(
+    project_path: str,
+    ignore_paths: tuple[str, ...] = (),
+) -> list[NPlusOneFinding]:
     """Walk *project_path* and return all N+1 query-risk findings.
 
     Args:
@@ -224,7 +229,7 @@ def detect(project_path: str) -> list[NPlusOneFinding]:
     findings: list[NPlusOneFinding] = []
 
     for dirpath, dirnames, filenames in os.walk(project_path):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        filter_dirnames(project_path, dirpath, dirnames, _SKIP_DIRS, ignore_paths)
 
         for filename in filenames:
             if filename not in _TARGET_FILES:
@@ -232,6 +237,8 @@ def detect(project_path: str) -> list[NPlusOneFinding]:
 
             full_path = os.path.join(dirpath, filename)
             rel_path = os.path.relpath(full_path, project_path)
+            if should_ignore_file(rel_path, ignore_paths):
+                continue
 
             try:
                 with open(full_path, encoding="utf-8") as fh:
