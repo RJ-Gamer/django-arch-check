@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>django-arch-check report</title>
+  <style>
+    :root {
+      --bg:             oklch(13% 0.014 240);
+      --surface:        oklch(17% 0.013 240);
+      --surface2:       oklch(21% 0.011 240);
+      --fg:             oklch(93% 0.005 240);
+      --muted:          oklch(54% 0.012 240);
+      --border:         oklch(27% 0.011 240);
+      --border2:        oklch(23% 0.010 240);
+
+      --critical:       oklch(64% 0.22 25);
+      --critical-dim:   oklch(50% 0.18 25);
+      --critical-bg:    oklch(18% 0.07 25);
+      --critical-bdr:   oklch(32% 0.13 25);
+
+      --warning:        oklch(76% 0.14 55);
+      --warning-dim:    oklch(62% 0.12 55);
+      --warning-bg:     oklch(17% 0.05 55);
+      --warning-bdr:    oklch(34% 0.10 55);
+
+      --clean:          oklch(68% 0.18 160);
+      --clean-bg:       oklch(17% 0.06 160);
+      --clean-bdr:      oklch(30% 0.10 160);
+
+      --code-fg:        oklch(72% 0.10 200);
+      --mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      font-size: 14px;
+      color: var(--fg);
+      background:
+        radial-gradient(circle at top left, oklch(19% 0.03 245 / 0.65), transparent 34%),
+        radial-gradient(circle at top right, oklch(18% 0.04 25 / 0.30), transparent 28%),
+        var(--bg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      min-height: 100vh;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .sticky-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: oklch(13% 0.014 240 / 0.88);
+      backdrop-filter: blur(14px) saturate(1.4);
+      -webkit-backdrop-filter: blur(14px) saturate(1.4);
+      border-bottom: 1px solid var(--border2);
+      padding: 9px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .sticky-brand { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.02em; white-space: nowrap; }
+    .sticky-divider { width: 1px; height: 16px; background: var(--border); flex-shrink: 0; }
+    .sticky-score-group { display: flex; align-items: baseline; gap: 5px; }
+    .sticky-score-num { font-size: 18px; font-weight: 800; color: var(--warning); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
+    .sticky-score-denom { font-size: 12px; color: var(--muted); }
+    .sticky-pills { display: flex; gap: 6px; }
+    .sticky-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+    .sticky-pill.critical { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-bdr); }
+    .sticky-pill.warning { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-bdr); }
+    .filter-group {
+      display: flex;
+      gap: 2px;
+      margin-left: auto;
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 3px;
+      border: 1px solid var(--border2);
+    }
+    .filter-btn {
+      font-family: var(--sans);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: color 0.12s, background 0.12s;
+    }
+    .filter-btn:hover { color: var(--fg); }
+    .filter-btn.active { background: var(--surface); color: var(--fg); }
+    .filter-btn.active.f-critical { color: var(--critical); }
+    .filter-btn.active.f-warning { color: var(--warning); }
+
+    .container { max-width: 1040px; margin: 0 auto; padding: 44px 28px 88px; }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 32px;
+      margin-bottom: 36px;
+      padding-bottom: 36px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .hero-eyebrow { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+    .hero-title { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; color: var(--fg); }
+    .hero-title .dim { color: var(--muted); font-weight: 400; }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; }
+    .meta-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    .meta-item code {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--code-fg);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .score-ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+    .score-arc { animation: ring-fill 1.1s cubic-bezier(0.4,0,0.2,1) 0.2s both; }
+    @keyframes ring-fill { from { stroke-dashoffset: 238.76; } to { stroke-dashoffset: 47.75; } }
+    .score-ring-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+    .score-ring-status { font-size: 11px; font-weight: 700; color: var(--warning); text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 32px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; padding: 18px 22px; }
+    .stat-card.critical { border-color: var(--critical-bdr); }
+    .stat-card.warning { border-color: var(--warning-bdr); }
+    .stat-card.clean { border-color: var(--clean-bdr); }
+    .stat-num { font-size: 36px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat-card.critical .stat-num { color: var(--critical); }
+    .stat-card.warning .stat-num { color: var(--warning); }
+    .stat-card.clean .stat-num { color: var(--clean); }
+    .stat-label { margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.02);
+    }
+    .section-header { display: flex; align-items: center; gap: 10px; padding: 13px 20px; background: var(--surface2); border-bottom: 1px solid var(--border2); }
+    .section-name { font-size: 13px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; }
+    .section-counts { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+    }
+    .badge-critical { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-bdr); }
+    .badge-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-bdr); }
+
+    .section-clean {
+      padding: 14px 20px;
+      font-size: 13px;
+      color: var(--clean);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-clean::before {
+      content: '';
+      display: block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--clean);
+      flex-shrink: 0;
+    }
+
+    .findings-table { width: 100%; border-collapse: collapse; }
+    .findings-table thead th {
+      text-align: left;
+      padding: 7px 20px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border2);
+      font-weight: 600;
+    }
+    .findings-table thead th:first-child { width: 130px; }
+    .finding-row td {
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border2);
+      font-size: 13px;
+      vertical-align: middle;
+      line-height: 1.5;
+    }
+    .finding-row:last-child td { border-bottom: none; }
+    .finding-row { transition: background 0.1s; }
+    .finding-row:hover { background: var(--surface2); }
+    .finding-row td code {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--code-fg);
+      background: oklch(20% 0.015 200 / 0.6);
+      border: 1px solid oklch(30% 0.012 200 / 0.5);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .finding-row td strong { color: var(--fg); font-weight: 600; }
+
+    .sev-cell { display: flex; align-items: center; gap: 7px; }
+    .sev-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .sev-dot.critical { background: var(--critical); box-shadow: 0 0 5px var(--critical-dim); }
+    .sev-dot.warning { background: var(--warning); }
+
+    .finding-row.hidden { display: none; }
+    .section-card.section-hidden { display: none; }
+
+    footer {
+      margin-top: 52px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border2);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-family: var(--mono);
+    }
+
+    @media (max-width: 640px) {
+      .hero { grid-template-columns: 1fr; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .stats-row .stat-card:last-child { grid-column: span 2; }
+      .filter-group { margin-left: 0; }
+      .container { padding: 28px 16px 64px; }
+      .sticky-bar { padding: 9px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sticky-bar">
+    <span class="sticky-brand">django-arch-check</span>
+    <div class="sticky-divider"></div>
+    <div class="sticky-score-group">
+      <span class="sticky-score-num">80</span>
+      <span class="sticky-score-denom">/ 100</span>
+    </div>
+    <div class="sticky-pills">
+      <span class="sticky-pill critical">1 critical</span>
+      <span class="sticky-pill warning">1 warning</span>
+    </div>
+    <div class="filter-group">
+      <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">All</button>
+      <button class="filter-btn f-critical" data-filter="critical" onclick="setFilter('critical', this)">Critical</button>
+      <button class="filter-btn f-warning" data-filter="warning" onclick="setFilter('warning', this)">Warning</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <header class="hero">
+      <div>
+        <div class="hero-eyebrow">Architecture Report</div>
+        <h1 class="hero-title">django-arch-check <span class="dim">/ fake_django2</span></h1>
+        <div class="hero-meta">
+          <div class="meta-item">Project <code>/tmp/fake_django2</code></div>
+          <div class="meta-item">Generated 2026-05-15 09:36 UTC</div>
+          <div class="meta-item">v0.1.0</div>
+        </div>
+      </div>
+      <div class="score-ring-wrap">
+        <svg width="96" height="96" viewBox="0 0 96 96" aria-label="Health score 80 out of 100">
+          <circle cx="48" cy="48" r="38" fill="none" stroke="oklch(23% 0.011 240)" stroke-width="7"></circle>
+          <circle
+            cx="48"
+            cy="48"
+            r="38"
+            fill="none"
+            stroke="oklch(76% 0.14 55)"
+            stroke-width="7"
+            stroke-dasharray="238.76"
+            stroke-dashoffset="47.75"
+            stroke-linecap="round"
+            transform="rotate(-90 48 48)"
+            class="score-arc"
+          ></circle>
+          <text
+            x="48"
+            y="48"
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-size="22"
+            font-weight="800"
+            fill="oklch(93% 0.005 240)"
+            font-family="-apple-system,BlinkMacSystemFont,system-ui,sans-serif"
+          >80</text>
+        </svg>
+        <span class="score-ring-label">Health Score</span>
+        <span class="score-ring-status">Healthy</span>
+      </div>
+    </header>
+
+    <div class="stats-row">
+      <div class="stat-card critical"><div class="stat-num">1</div><div class="stat-label">Critical</div></div>
+      <div class="stat-card warning"><div class="stat-num">1</div><div class="stat-label">Warnings</div></div>
+      <div class="stat-card clean"><div class="stat-num">5</div><div class="stat-label">Sections Clean</div></div>
+    </div>
+
+    <section class="section-card" data-section="fat-models">
+      <div class="section-header"><span class="section-name">Fat Models</span></div>
+      <div class="section-clean">No issues found</div>
+    </section>
+
+    <section class="section-card" data-section="god-apps">
+      <div class="section-header">
+        <span class="section-name">God Apps</span>
+        <div class="section-counts">
+          <span class="badge badge-critical">1 critical</span>
+          <span class="badge badge-warning">1 warning</span>
+        </div>
+      </div>
+      <table class="findings-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Finding</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="finding-row" data-severity="critical">
+            <td>
+              <div class="sev-cell">
+                <div class="sev-dot critical"></div>
+                <span class="badge badge-critical">CRITICAL</span>
+              </div>
+            </td>
+            <td><code>core/</code> owns 67% of total project code (210 / 312 lines)</td>
+          </tr>
+          <tr class="finding-row" data-severity="warning">
+            <td>
+              <div class="sev-cell">
+                <div class="sev-dot warning"></div>
+                <span class="badge badge-warning">WARNING</span>
+              </div>
+            </td>
+            <td><code>orders/</code> owns 30% of total project code (95 / 312 lines)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section-card" data-section="circular-imports">
+      <div class="section-header"><span class="section-name">Circular Imports</span></div>
+      <div class="section-clean">No issues found</div>
+    </section>
+
+    <section class="section-card" data-section="missing-service-layer">
+      <div class="section-header"><span class="section-name">Missing Service Layer</span></div>
+      <div class="section-clean">No issues found</div>
+    </section>
+
+    <section class="section-card" data-section="celery-tasks">
+      <div class="section-header"><span class="section-name">Celery Tasks Without Retry</span></div>
+      <div class="section-clean">No issues found</div>
+    </section>
+
+    <section class="section-card" data-section="direct-sql">
+      <div class="section-header"><span class="section-name">Direct SQL</span></div>
+      <div class="section-clean">No issues found</div>
+    </section>
+
+    <section class="section-card" data-section="n1-risks">
+      <div class="section-header"><span class="section-name">N+1 Query Risks</span></div>
+      <div class="section-clean">No issues found</div>
+    </section>
+
+    <footer>
+      <span>Health score based on finding severity and density</span>
+      <span>django-arch-check v0.1.0</span>
+    </footer>
+  </div>
+
+  <script>
+    function setFilter(type, btn) {
+      document.querySelectorAll('.filter-btn').forEach(function(b) {
+        b.classList.remove('active');
+      });
+      btn.classList.add('active');
+      document.querySelectorAll('[data-section]').forEach(function(section) {
+        var rows = section.querySelectorAll('.finding-row');
+        if (rows.length === 0) return;
+        var visible = 0;
+        rows.forEach(function(row) {
+          var match = type === 'all' || row.dataset.severity === type;
+          row.classList.toggle('hidden', !match);
+          if (match) visible++;
+        });
+        section.classList.toggle('section-hidden', visible === 0);
+      });
+    }
+  </script>
+</body>
+</html>

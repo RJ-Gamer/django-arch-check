@@ -42,6 +42,5 @@ Thumbs.db
 # PyPI / build
 *.whl
 *.tar.gz
-arch-report.html
 AGENTS.md
 graphify-out/
