@@ -116,6 +116,28 @@ def test_analyze_text_fat_model_finding_in_output(proj: ProjectBuilder) -> None:
     assert "CRITICAL" in result.output
 
 
+def test_analyze_text_missing_service_layer_uses_orm_call_count(
+    proj: ProjectBuilder,
+) -> None:
+    path = _clean_project(proj)
+    proj.write(
+        "blog/views.py",
+        (
+            "from blog.models import Post, Comment\n"
+            "def dashboard(request):\n"
+            "    posts = Post.objects.all()\n"
+            "    comments = Comment.objects.filter(is_public=True)\n"
+            "    return posts\n"
+        ),
+    )
+
+    result = run("analyze", proj_path=path)
+
+    assert result.exit_code == 0
+    assert "dashboard()" in result.output
+    assert "makes 2 direct ORM calls" in result.output
+
+
 # ---------------------------------------------------------------------------
 # analyze — html mode
 # ---------------------------------------------------------------------------

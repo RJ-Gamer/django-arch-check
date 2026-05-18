@@ -147,10 +147,11 @@ def _print_missing_service_layer(result: AnalysisResult) -> None:
 
     for f in findings:
         label = _severity_label(f.severity)
+        call_label = "call" if f.orm_call_count == 1 else "calls"
         if f.severity == "critical":
-            detail = f"contains {f.line_count} lines of business logic"
+            detail = f"contains {f.orm_call_count} direct ORM {call_label}"
         else:
-            detail = "makes direct ORM calls"
+            detail = f"makes {f.orm_call_count} direct ORM {call_label}"
         click.echo(
             f"  {label} {f.file_path} → "
             + click.style(f.view_name + "()", bold=True)
