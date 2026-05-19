@@ -12,7 +12,8 @@ from django_arch_check.analyzer import (
     run_analysis,
     validate_ignored_detectors,
 )
-from django_arch_check.report import generate_html
+from django_arch_check.report import compute_score, generate_html
+from django_arch_check.serializers import generate_json, generate_sarif
 
 # ---------------------------------------------------------------------------
 # Severity styling
@@ -264,8 +265,6 @@ def _write_html_report(result: AnalysisResult, project_path: str) -> None:
     """Generate arch-report.html and write it to the project root."""
     import os
 
-    from django_arch_check.report import compute_score
-
     html_content = generate_html(result, project_path)
     out_path = os.path.join(project_path, "arch-report.html")
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -273,6 +272,17 @@ def _write_html_report(result: AnalysisResult, project_path: str) -> None:
     score = compute_score(result)
     click.echo(click.style(f"  Health score: {score}/100", bold=True))
     click.echo(click.style(f"  Report saved: {out_path}", fg="cyan"))
+
+
+def _has_critical_findings(result: AnalysisResult) -> bool:
+    """Return True if any detector emitted a critical finding."""
+    return (
+        any(f.severity == "critical" for f in result.fat_models)
+        or any(f.severity == "critical" for f in result.god_apps)
+        or any(f.severity == "critical" for f in result.circular_imports)
+        or any(f.severity == "critical" for f in result.missing_service_layer)
+        or any(f.severity == "critical" for f in result.celery_tasks)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -325,10 +335,10 @@ def main() -> None:
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["text", "html"], case_sensitive=False),
+    type=click.Choice(["text", "html", "json", "sarif"], case_sensitive=False),
     default="text",
     show_default=True,
-    help="Output format: text (stdout) or html (arch-report.html).",
+    help="Output format: text/html/json/sarif. HTML writes arch-report.html; the others use stdout.",
 )
 def analyze(
     project_path: str,
@@ -344,8 +354,6 @@ def analyze(
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    click.echo(click.style(f"Analyzing: {project_path}", bold=True))
-
     result = run_analysis(
         project_path,
         fat_model_threshold=fat_model_threshold,
@@ -354,26 +362,27 @@ def analyze(
         ignore_paths=ignore_paths,
     )
 
+    if output_format in {"text", "html"}:
+        click.echo(click.style(f"Analyzing: {project_path}", bold=True))
+
     if output_format == "html":
         _write_html_report(result, project_path)
-        return
 
-    _print_fat_models(result)
-    _print_god_apps(result)
-    _print_circular_imports(result)
-    _print_missing_service_layer(result)
-    _print_celery_tasks(result)
-    _print_direct_sql(result)
-    _print_n_plus_one(result)
+    elif output_format == "json":
+        click.echo(generate_json(result, project_path))
 
-    # Exit non-zero if any critical findings exist across all detectors —
-    # allows the tool to act as a CI gate.
-    has_critical = (
-        any(f.severity == "critical" for f in result.fat_models)
-        or any(f.severity == "critical" for f in result.god_apps)
-        or any(f.severity == "critical" for f in result.circular_imports)
-        or any(f.severity == "critical" for f in result.missing_service_layer)
-        or any(f.severity == "critical" for f in result.celery_tasks)
-    )
-    if has_critical:
+    elif output_format == "sarif":
+        click.echo(generate_sarif(result, project_path))
+
+    else:
+        _print_fat_models(result)
+        _print_god_apps(result)
+        _print_circular_imports(result)
+        _print_missing_service_layer(result)
+        _print_celery_tasks(result)
+        _print_direct_sql(result)
+        _print_n_plus_one(result)
+
+    # Exit non-zero if any critical findings exist across all detectors.
+    if _has_critical_findings(result):
         sys.exit(1)

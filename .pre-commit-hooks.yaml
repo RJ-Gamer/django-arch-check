@@ -1,0 +1,7 @@
+- id: django-arch-check
+  name: Django Architecture Check
+  description: Run static architectural checks for Django projects.
+  entry: django-arch-check analyze .
+  language: python
+  types: [python]
+  pass_filenames: false

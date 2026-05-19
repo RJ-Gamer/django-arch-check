@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.4.2-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.5.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-7-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-164%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-170%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -89,11 +89,44 @@ django-arch-check analyze /path/to/project
 # Generate a self-contained HTML report
 django-arch-check analyze --format html /path/to/project
 
+# Emit machine-readable JSON for scripts and dashboards
+django-arch-check analyze --format json /path/to/project > results.json
+
+# Emit SARIF for GitHub code scanning, VS Code, and CI dashboards
+django-arch-check analyze --format sarif /path/to/project > results.sarif
+
 # Tune thresholds
 django-arch-check analyze \
   --fat-model-threshold 20 \
   --god-app-threshold 40 \
   /path/to/project
+```
+
+---
+
+## Pre-commit Integration
+
+`django-arch-check` ships a ready-made `.pre-commit-hooks.yaml`, so teams can add it to an existing pre-commit setup with a single hook entry:
+
+```yaml
+repos:
+  - repo: https://github.com/RJ-Gamer/django-arch-check
+    rev: v0.6.0
+    hooks:
+      - id: django-arch-check
+```
+
+The bundled hook runs `django-arch-check analyze .` from the repository root and disables filename passing, which makes it work correctly for a whole-project architecture scan.
+
+You can still pass your own CLI options from `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/RJ-Gamer/django-arch-check
+    rev: v0.6.0
+    hooks:
+      - id: django-arch-check
+        args: [--ignore-path, legacy/]
 ```
 
 ---
@@ -167,8 +200,10 @@ Options:
                            [default: 30]
   --ignore DETECTOR        Ignore a detector by name. Repeatable.
   --ignore-path PATH       Skip files whose path contains PATH. Repeatable.
-  --format [text|html]     Output format: text (stdout) or html (arch-
-                           report.html).  [default: text]
+  --format [text|html|json|sarif]
+                           Output format: text/html/json/sarif. HTML writes
+                           arch-report.html; the others use stdout.  [default:
+                           text]
   --help                   Show this message and exit.
 ```
 
@@ -326,6 +361,38 @@ This avoids driving large mature projects straight to zero while still rewarding
 
 ---
 
+## JSON and SARIF Output
+
+For automation, use machine-readable output modes:
+
+```bash
+django-arch-check analyze --format json ./ > results.json
+django-arch-check analyze --format sarif ./ > results.sarif
+```
+
+### JSON
+
+JSON output is designed for scripting, custom dashboards, and third-party integrations.
+
+It includes:
+
+- Tool metadata and version
+- Project path and generation timestamp
+- Health score and severity summary
+- Per-detector findings, skip state, and normalized messages
+
+### SARIF
+
+SARIF output follows SARIF `2.1.0`, the standard format consumed by:
+
+- GitHub Advanced Security / code scanning
+- VS Code's Problems panel
+- CI systems and security dashboards that ingest SARIF
+
+Each result includes the detector rule id, severity level, message, and source location when one is available.
+
+---
+
 ## CI Integration
 
 ### GitHub Actions
@@ -359,6 +426,20 @@ To generate an HTML report artifact:
   with:
     name: arch-report
     path: arch-report.html
+```
+
+### GitHub Code Scanning (SARIF)
+
+```yaml
+- name: Generate SARIF report
+  run: |
+    pip install django-arch-check
+    django-arch-check analyze --format sarif ./ > results.sarif
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
 ```
 
 ---
@@ -464,7 +545,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The next release version for this change set is `0.4.0`.
+The next release version for this change set is `0.6.0`.
 
 ---
 

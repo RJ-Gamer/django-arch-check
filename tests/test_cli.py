@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from unittest.mock import Mock
@@ -185,6 +186,92 @@ def test_analyze_html_exits_zero_clean(proj: ProjectBuilder) -> None:
     assert result.exit_code == 0
 
 
+def test_analyze_html_critical_finding_exits_one_and_writes_report(
+    proj: ProjectBuilder,
+) -> None:
+    path = _critical_project(proj)
+    result = run("analyze", "--format", "html", proj_path=path)
+    assert result.exit_code == 1
+    assert os.path.exists(os.path.join(path, "arch-report.html"))
+
+
+def test_analyze_json_output_is_valid_json(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    result = run("analyze", "--format", "json", proj_path=path)
+
+    assert result.exit_code == 0
+    assert "Analyzing:" not in result.output
+
+    payload = json.loads(result.output)
+    assert payload["tool"]["name"] == "django-arch-check"
+    assert payload["project_path"] == path
+    assert payload["summary"]["health_score"] == 100
+    assert payload["summary"]["skipped_detectors"] == []
+    result.output.encode("cp1252")
+
+
+def test_analyze_json_critical_output_still_parses(proj: ProjectBuilder) -> None:
+    path = _critical_project(proj)
+    result = run("analyze", "--format", "json", proj_path=path)
+
+    assert result.exit_code == 1
+    assert "Analyzing:" not in result.output
+
+    payload = json.loads(result.output)
+    fat_models = next(d for d in payload["detectors"] if d["id"] == "fat_models")
+    assert fat_models["finding_count"] == 1
+    assert fat_models["critical_count"] == 1
+    assert fat_models["findings"][0]["class_name"] == "Order"
+    assert fat_models["findings"][0]["location"]["path"] == "orders/models.py"
+    result.output.encode("cp1252")
+
+
+def test_analyze_json_marks_skipped_detectors(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    result = run("analyze", "--format", "json", "--ignore", "celery_tasks", proj_path=path)
+
+    assert result.exit_code == 0
+
+    payload = json.loads(result.output)
+    assert payload["summary"]["skipped_detectors"] == ["celery_tasks"]
+    detector = next(d for d in payload["detectors"] if d["id"] == "celery_tasks")
+    assert detector["skipped"] is True
+    assert detector["findings"] == []
+
+
+def test_analyze_sarif_output_is_valid_sarif(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    result = run("analyze", "--format", "sarif", proj_path=path)
+
+    assert result.exit_code == 0
+    assert "Analyzing:" not in result.output
+
+    payload = json.loads(result.output)
+    assert payload["version"] == "2.1.0"
+    assert payload["runs"][0]["tool"]["driver"]["name"] == "django-arch-check"
+    assert len(payload["runs"][0]["tool"]["driver"]["rules"]) == 7
+    assert payload["runs"][0]["results"] == []
+    result.output.encode("cp1252")
+
+
+def test_analyze_sarif_critical_output_contains_result_location(
+    proj: ProjectBuilder,
+) -> None:
+    path = _critical_project(proj)
+    result = run("analyze", "--format", "sarif", proj_path=path)
+
+    assert result.exit_code == 1
+
+    payload = json.loads(result.output)
+    sarif_result = payload["runs"][0]["results"][0]
+    assert sarif_result["ruleId"] == "fat_models"
+    assert sarif_result["level"] == "error"
+    assert sarif_result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == (
+        "orders/models.py"
+    )
+    result.output.encode("cp1252")
+
+
 # ---------------------------------------------------------------------------
 # Threshold flags
 # ---------------------------------------------------------------------------
@@ -244,6 +331,8 @@ def test_help_shows_all_options(proj: ProjectBuilder) -> None:
         "--format",
     ]:
         assert option in result.output
+    assert "json" in result.output
+    assert "sarif" in result.output
 
 
 def test_ignore_invalid_detector_name_shows_clear_error(proj: ProjectBuilder) -> None:
