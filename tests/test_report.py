@@ -136,7 +136,7 @@ class TestGenerateHtml:
         for title in [
             "Fat Models", "God Apps", "Circular Imports",
             "Missing Service Layer", "Celery Tasks Without Retry",
-            "Direct SQL", "N+1 Query Risks",
+            "Direct SQL", "N+1 Query Risks", "Migration Safety",
         ]:
             assert title in html, f"Section title missing: {title!r}"
 

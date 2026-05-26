@@ -8,8 +8,9 @@ Detection strategy
 1. Find all ``views.py`` files in the project.
 2. Parse with AST.
 3. For each top-level function and each method inside a class:
-   a. Count direct ORM calls: ``X.objects.filter/get/create/update/delete/all``
-   b. Apply severity rules based on ORM call count:
+   a. Skip DRF/Django override methods where ORM calls are expected.
+   b. Count direct ORM calls: ``X.objects.filter/get/create/update/delete/all``
+   c. Apply severity rules based on ORM call count:
       - ``warning``:  2 or more ORM calls in a single view function
       - ``critical``: 4 or more ORM calls in a single view function
 
@@ -63,6 +64,31 @@ _WARNING_ORM_THRESHOLD = 2
 #: Minimum ORM call count to escalate to critical.
 _CRITICAL_ORM_THRESHOLD = 4
 
+#: DRF and Django CBV override methods where ORM calls are expected and correct.
+#: Flagging these would be a false positive — their entire purpose is queryset work.
+_EXEMPT_METHOD_NAMES: frozenset[str] = frozenset(
+    {
+        # DRF ViewSet / GenericAPIView overrides
+        "get_queryset",
+        "get_object",
+        "get_serializer",
+        "get_serializer_class",
+        "perform_create",
+        "perform_update",
+        "perform_destroy",
+        "get_permissions",
+        "get_throttles",
+        "get_authenticators",
+        # Django CBV overrides
+        "get_context_data",
+        "get_form_kwargs",
+        "form_valid",
+        "form_invalid",
+        # Common custom override names
+        "get_success_url",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # ORM call detection helpers
@@ -70,25 +96,15 @@ _CRITICAL_ORM_THRESHOLD = 4
 
 
 def _has_orm_calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Return True if the function body contains any ``X.objects.Y(…)`` call.
-
-    Pattern matched::
-
-        User.objects.filter(...)   → Attribute(value=Attribute(value=Name("User"),
-                                                                attr="objects"),
-                                                attr="filter")
-    """
+    """Return True if the function body contains any ``X.objects.Y(…)`` call."""
     for node in ast.walk(func_node):
         if not isinstance(node, ast.Attribute):
             continue
-        # node is the outer attribute: .filter, .get, .all, .create, etc.
         inner = node.value
         if not isinstance(inner, ast.Attribute):
             continue
-        # inner should be .objects
         if inner.attr != "objects":
             continue
-        # inner.value should be a Name (the model class)
         if isinstance(inner.value, ast.Name):
             return True
     return False
@@ -102,12 +118,7 @@ def _has_orm_calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def _count_orm_calls(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> int:
-    """Count ``X.objects.Y(…)`` call patterns in the function body.
-
-    Each occurrence of the two-level attribute chain
-    ``<Name>.objects.<method>`` counts as one ORM call.  This is the same
-    pattern used by ``_has_orm_calls`` but returns a count instead of a bool.
-    """
+    """Count ``X.objects.Y(…)`` call patterns in the function body."""
     count = 0
     for node in ast.walk(func_node):
         if not isinstance(node, ast.Attribute):
@@ -130,7 +141,7 @@ def _count_orm_calls(
 def _iter_view_functions(
     tree: ast.Module,
 ) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
-    """Yield ``(qualified_name, node)`` pairs for every view function/method.
+    """Return ``(qualified_name, node)`` pairs for every view function/method.
 
     Covers:
     - Top-level functions (FBVs): ``def create_order(request): …``
@@ -159,12 +170,7 @@ def _iter_view_functions(
 def _severity(
     orm_call_count: int,
 ) -> Literal["warning", "critical"] | None:
-    """Return severity based on ORM call count, or ``None`` if below threshold.
-
-    - ``None``     — fewer than :data:`_WARNING_ORM_THRESHOLD` ORM calls
-    - ``warning``  — :data:`_WARNING_ORM_THRESHOLD` or more ORM calls
-    - ``critical`` — :data:`_CRITICAL_ORM_THRESHOLD` or more ORM calls
-    """
+    """Return severity based on ORM call count, or ``None`` if below threshold."""
     if orm_call_count >= _CRITICAL_ORM_THRESHOLD:
         return "critical"
     if orm_call_count >= _WARNING_ORM_THRESHOLD:
@@ -181,15 +187,7 @@ def detect(
     project_path: str,
     ignore_paths: tuple[str, ...] = (),
 ) -> list[MissingServiceLayerFinding]:
-    """Walk *project_path* and return all missing-service-layer findings.
-
-    Args:
-        project_path: Root directory of the Django project to analyse.
-
-    Returns:
-        A list of :class:`MissingServiceLayerFinding` instances for every
-        view function with 2 or more direct ORM calls.
-    """
+    """Walk *project_path* and return all missing-service-layer findings."""
     findings: list[MissingServiceLayerFinding] = []
 
     for dirpath, dirnames, filenames in os.walk(project_path):
@@ -216,6 +214,13 @@ def detect(
                 continue
 
             for view_name, func_node in _iter_view_functions(tree):
+
+                # ← THIS IS WHAT WAS MISSING IN YOUR VERSION
+                # Strip class prefix before checking: "PostViewSet.get_queryset" → "get_queryset"
+                bare_name = view_name.split(".")[-1]
+                if bare_name in _EXEMPT_METHOD_NAMES:
+                    continue
+
                 orm_count = _count_orm_calls(func_node)
                 sev = _severity(orm_count)
 

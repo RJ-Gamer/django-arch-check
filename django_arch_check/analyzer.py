@@ -26,6 +26,7 @@ from django_arch_check.detectors import (
     god_apps,
     missing_service_layer,
     n_plus_one,
+    migration_safety,
 )
 from django_arch_check.detectors.celery_tasks import CeleryTaskFinding
 from django_arch_check.detectors.circular_imports import CircularImportFinding
@@ -35,6 +36,8 @@ from django_arch_check.detectors.god_apps import GodAppFinding
 from django_arch_check.detectors.missing_service_layer import MissingServiceLayerFinding
 from django_arch_check.detectors.n_plus_one import NPlusOneFinding
 
+from django_arch_check.detectors.migration_safety import MigrationSafetyFinding 
+
 VALID_DETECTORS: Final[tuple[str, ...]] = (
     "fat_models",
     "god_apps",
@@ -43,6 +46,7 @@ VALID_DETECTORS: Final[tuple[str, ...]] = (
     "celery_tasks",
     "direct_sql",
     "n_plus_one",
+    "migration_safety",
 )
 
 
@@ -68,6 +72,7 @@ class AnalysisResult:
     celery_tasks: list[CeleryTaskFinding] = field(default_factory=list)
     direct_sql: list[DirectSQLFinding] = field(default_factory=list)
     n_plus_one: list[NPlusOneFinding] = field(default_factory=list)
+    migration_safety: list[MigrationSafetyFinding] = field(default_factory=list)  
     skipped_detectors: tuple[str, ...] = ()
 
 
@@ -140,5 +145,10 @@ def run_analysis(
         ),
         skipped_detectors=tuple(
             detector for detector in VALID_DETECTORS if detector in ignored_set
+        ),
+        migration_safety=(
+            []
+            if "migration_safety" in ignored_set
+            else migration_safety.detect(project_path, ignore_paths=ignore_paths)
         ),
     )

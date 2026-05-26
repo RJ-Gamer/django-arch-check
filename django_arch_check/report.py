@@ -69,6 +69,7 @@ def _all_findings(result: AnalysisResult) -> list[list[object]]:
         result.celery_tasks,
         result.direct_sql,
         result.n_plus_one,
+        result.migration_safety,
     ]
 
 
@@ -125,6 +126,25 @@ def _finding_to_row(f: object) -> tuple[str, str]:
             f"<code>{_e(getattr(f, 'file_path'))}:{getattr(f, 'line_number')}</code> "
             "→ ORM call inside loop — possible N+1 query risk"
         )
+    elif hasattr(f, "migration_name") and hasattr(f, "operation"):
+        model = getattr(f, "model_name", "")
+        field = getattr(f, "field_name", "")
+        context_parts = []
+        if model:
+            context_parts.append(f"model=<code>{_e(model)}</code>")
+        if field:
+            context_parts.append(f"field=<code>{_e(field)}</code>")
+        context = ", ".join(context_parts)
+        op_display = (
+            f"<strong>{_e(getattr(f, 'operation'))}</strong>({context})"
+            if context
+            else f"<strong>{_e(getattr(f, 'operation'))}</strong>"
+        )
+        desc = (
+            f"<code>{_e(getattr(f, 'file_path'))}</code> → {op_display}"
+            f"<br><span style='color:var(--muted);font-size:12px'>"
+            f"ℹ {_e(getattr(f, 'message'))}</span>"
+        )
     else:
         desc = _e(str(f))
 
@@ -148,6 +168,8 @@ _SECTIONS: list[tuple[str, str]] = [
     ("celery_tasks", "Celery Tasks Without Retry"),
     ("direct_sql", "Direct SQL"),
     ("n_plus_one", "N+1 Query Risks"),
+    ("migration_safety", "Migration Safety"),
+
 ]
 
 

@@ -100,6 +100,7 @@ def test_analyze_text_output_contains_all_section_headers(proj: ProjectBuilder) 
         "Celery Tasks Without Retry",
         "Direct SQL",
         "N+1 Query Risks",
+        "Migration Safety",
     ]:
         assert header in result.output, f"Missing section header: {header!r}"
 
@@ -249,7 +250,7 @@ def test_analyze_sarif_output_is_valid_sarif(proj: ProjectBuilder) -> None:
     payload = json.loads(result.output)
     assert payload["version"] == "2.1.0"
     assert payload["runs"][0]["tool"]["driver"]["name"] == "django-arch-check"
-    assert len(payload["runs"][0]["tool"]["driver"]["rules"]) == 7
+    assert len(payload["runs"][0]["tool"]["driver"]["rules"]) == 8
     assert payload["runs"][0]["results"] == []
     result.output.encode("cp1252")
 
@@ -358,12 +359,14 @@ def test_ignore_detector_skips_it_entirely(
     monkeypatch.setattr(analyzer.celery_tasks, "detect", called)
     monkeypatch.setattr(analyzer.direct_sql, "detect", called)
     monkeypatch.setattr(analyzer.n_plus_one, "detect", called)
+    monkeypatch.setattr(analyzer.migration_safety, "detect", called)  # ← ADD
+
 
     result = run("analyze", "--ignore", "fat_models", proj_path=path)
 
     assert result.exit_code == 0
     skipped.assert_not_called()
-    assert called.call_count == 6
+    assert called.call_count == 7
     assert "⊘ Skipped (--ignore flag)" in result.output
 
 

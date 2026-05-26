@@ -40,16 +40,15 @@ def test_warning_cbv_method_qualified_name(proj: ProjectBuilder) -> None:
     proj.write("orders/views.py", textwrap.dedent("""\
         from orders.models import Order, Item
         class OrderView:
-            def get(self, request):
+            def list(self, request):          # ← not exempt
                 orders = Order.objects.filter(status='active')
                 items = Item.objects.all()
                 return orders
     """))
     findings = detect(proj.path)
     assert len(findings) == 1
-    assert findings[0].view_name == "OrderView.get"
+    assert findings[0].view_name == "OrderView.list"
     assert findings[0].orm_call_count == 2
-
 
 # ---------------------------------------------------------------------------
 # Critical: long view with ORM call
@@ -206,3 +205,28 @@ def test_file_path_is_relative(proj: ProjectBuilder) -> None:
     assert len(findings) == 1
     assert not findings[0].file_path.startswith("/")
     
+
+def test_exempt_drf_methods_not_flagged(proj: ProjectBuilder) -> None:
+    """DRF override methods with ORM calls must not be flagged."""
+    proj.write("orders/views.py", textwrap.dedent("""\
+        from orders.models import Order, Item, User, Payment
+        class OrderViewSet:
+            def get_queryset(self):
+                return Order.objects.filter(
+                    user=self.request.user
+                ).select_related('user').prefetch_related('items')
+
+            def perform_create(self, serializer):
+                user = User.objects.get(id=self.request.user.id)
+                payment = Payment.objects.filter(user=user).first()
+                serializer.save(user=user, payment=payment)
+
+            def list(self, request):
+                orders = Order.objects.all()
+                items = Item.objects.filter(order__in=orders)
+                return orders
+    """))
+    findings = detect(proj.path)
+    # get_queryset and perform_create are exempt — only list() should be flagged
+    assert len(findings) == 1
+    assert findings[0].view_name == "OrderViewSet.list"

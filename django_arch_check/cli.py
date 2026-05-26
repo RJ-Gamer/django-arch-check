@@ -260,6 +260,46 @@ def _print_n_plus_one(result: AnalysisResult) -> None:
     click.echo()
     click.echo(click.style(f"  Found {count} potential N+1 issue(s).", fg="yellow"))
 
+def _print_migration_safety(result: AnalysisResult) -> None:
+    """Print migration safety findings and their section summary."""
+    findings = result.migration_safety
+
+    click.echo()
+    click.echo(click.style("── Migration Safety ────────────────────────", bold=True))
+
+    if _is_skipped(result, "migration_safety"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
+
+    if not findings:
+        click.echo(click.style("  No migration safety issues found.", fg="green"))
+        return
+
+    for f in findings:
+        label = _severity_label(f.severity)
+
+        # Build a compact context string for the operation
+        if f.model_name and f.field_name:
+            context = f"{f.model_name}.{f.field_name}"
+        elif f.model_name:
+            context = f.model_name
+        else:
+            context = ""
+
+        op_display = f"{f.operation}({context})" if context else f.operation
+
+        click.echo(
+            f"  {label} {f.file_path} → "
+            + click.style(op_display, bold=True)
+        )
+        # Advisory message indented under the finding line
+        click.echo(f"{'':13}  ℹ  {f.message}")
+
+    count = len(findings)
+    click.echo()
+    click.echo(
+        click.style(f"  Found {count} migration safety issue(s).", fg="yellow")
+    )
 
 def _write_html_report(result: AnalysisResult, project_path: str) -> None:
     """Generate arch-report.html and write it to the project root."""
@@ -382,6 +422,8 @@ def analyze(
         _print_celery_tasks(result)
         _print_direct_sql(result)
         _print_n_plus_one(result)
+        _print_migration_safety(result)
+
 
     # Exit non-zero if any critical findings exist across all detectors.
     if _has_critical_findings(result):

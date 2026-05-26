@@ -20,11 +20,13 @@ def test_run_analysis_skips_ignored_detector(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(analyzer.celery_tasks, "detect", called)
     monkeypatch.setattr(analyzer.direct_sql, "detect", called)
     monkeypatch.setattr(analyzer.n_plus_one, "detect", called)
+    monkeypatch.setattr(analyzer.migration_safety, "detect", called)  # ← ADD
+
 
     result = analyzer.run_analysis("/project", ignored_detectors=("fat_models",))
 
     skipped.assert_not_called()
-    assert called.call_count == 6
+    assert called.call_count == 7
     assert result.skipped_detectors == ("fat_models",)
 
 

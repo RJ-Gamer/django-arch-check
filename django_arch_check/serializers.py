@@ -64,6 +64,14 @@ _DETECTORS: Final[tuple[tuple[str, str, str, str], ...]] = (
         "Flags likely N+1 query patterns when ORM calls occur inside loops"
         " without nearby select_related or prefetch_related usage.",
     ),
+    (
+        "migration_safety",
+        "Migration Safety",
+        "Migration operations that carry deployment or data-safety risk.",
+        "Flags AddField without a default on NOT NULL columns, RemoveField, RenameField, "
+        "RunPython without atomic=False, and RunSQL. Each finding is an advisory — not an "
+        "error — and includes the risk, when it is safe to ignore, and a safer alternative.",
+    ),
 )
 
 
@@ -305,6 +313,22 @@ def _finding_message(finding: object) -> str:
         return (
             f"{getattr(finding, 'file_path')}:{getattr(finding, 'line_number')}"
             " → ORM call inside loop — possible N+1 query risk"
+        )
+    
+    if hasattr(finding, "migration_name") and hasattr(finding, "operation"):
+        model = getattr(finding, "model_name", "")
+        field = getattr(finding, "field_name", "")
+        context_parts = []
+        if model:
+            context_parts.append(f"model={model!r}")
+        if field:
+            context_parts.append(f"field={field!r}")
+        context = ", ".join(context_parts)
+        op = getattr(finding, "operation")
+        op_display = f"{op}({context})" if context else op
+        return (
+            f"{getattr(finding, 'file_path')} → {op_display}: "
+            f"{getattr(finding, 'message')}"
         )
 
     return str(finding)

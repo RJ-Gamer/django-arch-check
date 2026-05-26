@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.5.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.6.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
-![Detectors](https://img.shields.io/badge/DETECTORS-7-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-170%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Detectors](https://img.shields.io/badge/DETECTORS-8-orange?style=for-the-badge)
+![Tests](https://img.shields.io/badge/TESTS-211%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -21,6 +21,7 @@ It scans source code statically and flags structural issues before they become e
 - Celery tasks without retry
 - Direct SQL usage
 - N+1 query risks
+- Migration safety risks
 
 ```text
 Analyzing: /home/user/myproject
@@ -149,11 +150,12 @@ Valid detector names:
 - `celery_tasks`
 - `direct_sql`
 - `n_plus_one`
+- `migration_safety`
 
 If an invalid detector name is passed, the CLI exits with a clear error:
 
 ```text
-Error: Unknown detector 'fat_modelz'. Valid detectors are: fat_models, god_apps, circular_imports, missing_service_layer, celery_tasks, direct_sql, n_plus_one
+Error: Unknown detector 'fat_modelz'. Valid detectors are: fat_models, god_apps, circular_imports, missing_service_layer, celery_tasks, direct_sql, n_plus_one, migration_safety
 ```
 
 In HTML reports, skipped detectors are shown as:
@@ -323,6 +325,34 @@ Notes:
 - Scans `views.py` and `serializers.py`
 - Looks for `X.objects.method(...)` patterns inside loops
 - Heuristic by design; false positives and false negatives are possible
+
+
+### Migration Safety
+
+Flags migration operations that carry deployment or data-safety risk.
+
+- Warning: `RemoveField` — field removal is irreversible
+- Warning: `RenameField` — breaks code referencing the old name during rolling deploys
+- Warning: `AddField` with a NOT NULL column and no `default` — fails on non-empty tables
+- Warning: `RunPython` without `atomic = False` on the Migration class — long-running data migrations hold locks
+- Warning: `RunSQL` — raw SQL bypasses Django's ORM safety layer
+
+Every finding includes an advisory message explaining the risk and a safer alternative approach. To suppress a known-safe finding, add `# django-arch-check: ignore` on the operation line:
+
+```python
+(
+    migrations.RemoveField(  # django-arch-check: ignore
+        model_name="order",
+        name="legacy_status",
+    ),
+)
+```
+
+Notes:
+
+- Only scans files inside `migrations/` directories
+- Skips `__init__.py`
+- Does not block or fail — advises only
 
 ---
 
@@ -508,6 +538,7 @@ django_arch_check/
     ├── missing_service_layer.py
     ├── celery_tasks.py
     ├── direct_sql.py
+    ├── migration_safety.py
     └── n_plus_one.py
 
 tests/
@@ -519,6 +550,7 @@ tests/
 ├── test_missing_service_layer.py
 ├── test_celery_tasks.py
 ├── test_direct_sql.py
+├── test_migration_safety.py
 ├── test_n_plus_one.py
 ├── test_report.py
 └── test_cli.py
