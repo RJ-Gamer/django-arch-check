@@ -51,76 +51,75 @@ from django_arch_check.analyzer import AnalysisResult
 # ---------------------------------------------------------------------------
 
 _DETECTOR_WEIGHTS: dict[str, dict[str, float]] = {
-    "circular_imports":      {"critical": 10.0},
-    "celery_tasks":          {"critical":  8.0, "warning": 3.0},
-    "migration_safety":      {"warning":   6.0},
-    "missing_service_layer": {"critical":  4.0, "warning": 2.0},
-    "n_plus_one":            {"warning":   3.0},
-    "direct_sql":            {"warning":   2.0},
-    "god_apps":              {"critical":  3.0, "warning": 1.5},
-    "fat_models":            {"critical":  2.0, "warning": 1.0},
+    "circular_imports": {"critical": 10.0},
+    "celery_tasks": {"critical": 8.0, "warning": 3.0},
+    "migration_safety": {"warning": 6.0},
+    "missing_service_layer": {"critical": 4.0, "warning": 2.0},
+    "n_plus_one": {"warning": 3.0},
+    "direct_sql": {"warning": 2.0},
+    "god_apps": {"critical": 3.0, "warning": 1.5},
+    "fat_models": {"critical": 2.0, "warning": 1.0},
 }
 
 # ---------------------------------------------------------------------------
-# Section registry  (single source of truth for order + detector id → title)
+# Section registry
 # ---------------------------------------------------------------------------
 
 _SECTIONS: list[tuple[str, str]] = [
-    ("fat_models",            "Fat Models"),
-    ("god_apps",              "God Apps"),
-    ("circular_imports",      "Circular Imports"),
+    ("fat_models", "Fat Models"),
+    ("god_apps", "God Apps"),
+    ("circular_imports", "Circular Imports"),
     ("missing_service_layer", "Missing Service Layer"),
-    ("celery_tasks",          "Celery Tasks Without Retry"),
-    ("direct_sql",            "Direct SQL"),
-    ("n_plus_one",            "N+1 Query Risks"),
-    ("migration_safety",      "Migration Safety"),
+    ("celery_tasks", "Celery Tasks Without Retry"),
+    ("direct_sql", "Direct SQL"),
+    ("n_plus_one", "N+1 Query Risks"),
+    ("migration_safety", "Migration Safety"),
 ]
 
 # ---------------------------------------------------------------------------
 # Scoring constants
 # ---------------------------------------------------------------------------
 
-_DENSITY_FACTOR:        float = 8.0
-_ABSOLUTE_FACTOR:       float = 0.08
-_DENSITY_PENALTY_CAP:   int   = 65
-_ABSOLUTE_PENALTY_CAP:  int   = 15
-_DEFAULT_FILE_COUNT:    int   = 50   # fallback when project_path is not provided
+_DENSITY_FACTOR: float = 8.0
+_ABSOLUTE_FACTOR: float = 0.08
+_DENSITY_PENALTY_CAP: int = 65
+_ABSOLUTE_PENALTY_CAP: int = 15
+_DEFAULT_FILE_COUNT: int = 50
 
-_SKIP_DIRS: frozenset[str] = frozenset({
-    ".git", ".hg", ".svn", ".tox",
-    ".venv", "venv", "env", ".env",
-    "__pycache__", "node_modules",
-    ".mypy_cache", ".ruff_cache", ".pytest_cache",
-    "htmlcov", "dist", "build", ".eggs",
-})
-
-# ---------------------------------------------------------------------------
-# File counting
-# ---------------------------------------------------------------------------
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".tox",
+        ".venv",
+        "venv",
+        "env",
+        ".env",
+        "__pycache__",
+        "node_modules",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        "htmlcov",
+        "dist",
+        "build",
+        ".eggs",
+    }
+)
 
 
 def _count_python_files(project_path: str) -> int:
-    """Count .py files in *project_path*, excluding tool and cache directories.
-
-    Returns :data:`_DEFAULT_FILE_COUNT` when *project_path* is empty so that
-    callers which do not have a path available (e.g. tests) still get a
-    sensible denominator.
-    """
+    """Count .py files in *project_path*, excluding tool and cache directories."""
     if not project_path:
         return _DEFAULT_FILE_COUNT
     count = 0
-    for dirpath, dirnames, filenames in os.walk(project_path):
+    for _, dirnames, filenames in os.walk(project_path):
         dirnames[:] = [
-            d for d in dirnames
-            if d not in _SKIP_DIRS and not d.startswith(".")
+            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
         ]
         count += sum(1 for f in filenames if f.endswith(".py"))
     return max(1, count)
-
-
-# ---------------------------------------------------------------------------
-# Weighted score
-# ---------------------------------------------------------------------------
 
 
 def _compute_weighted_score(result: AnalysisResult) -> float:
@@ -129,15 +128,10 @@ def _compute_weighted_score(result: AnalysisResult) -> float:
     for detector_id, _ in _SECTIONS:
         findings = getattr(result, detector_id, [])
         weights = _DETECTOR_WEIGHTS.get(detector_id, {})
-        for f in findings:
-            sev = getattr(f, "severity", "warning")
-            total += weights.get(sev, 1.0)
+        for finding in findings:
+            severity = getattr(finding, "severity", "warning")
+            total += weights.get(severity, 1.0)
     return total
-
-
-# ---------------------------------------------------------------------------
-# Public score API
-# ---------------------------------------------------------------------------
 
 
 def compute_score(result: AnalysisResult, project_path: str = "") -> int:
@@ -147,149 +141,86 @@ def compute_score(result: AnalysisResult, project_path: str = "") -> int:
         return 100
 
     file_count = _count_python_files(project_path)
-    normalized_density  = weighted / math.log(file_count + 1)
-    density_penalty     = min(_DENSITY_PENALTY_CAP,  round(normalized_density * _DENSITY_FACTOR))
-    absolute_penalty    = min(_ABSOLUTE_PENALTY_CAP, round(weighted * _ABSOLUTE_FACTOR))
-
+    normalized_density = weighted / math.log(file_count + 1)
+    density_penalty = min(
+        _DENSITY_PENALTY_CAP, round(normalized_density * _DENSITY_FACTOR)
+    )
+    absolute_penalty = min(
+        _ABSOLUTE_PENALTY_CAP, round(weighted * _ABSOLUTE_FACTOR)
+    )
     return max(0, 100 - density_penalty - absolute_penalty)
-
-
-# ---------------------------------------------------------------------------
-# Grade helpers  (public so cli.py can import them)
-# ---------------------------------------------------------------------------
 
 
 def score_grade(score: int) -> str:
     """Return letter grade A–F for *score*."""
-    if score >= 90: return "A"
-    if score >= 75: return "B"
-    if score >= 60: return "C"
-    if score >= 40: return "D"
+    if score >= 90:
+        return "A"
+    if score >= 75:
+        return "B"
+    if score >= 60:
+        return "C"
+    if score >= 40:
+        return "D"
     return "F"
 
 
 def score_label(score: int) -> str:
     """Return a human-readable label for *score*."""
-    if score >= 90: return "Excellent"
-    if score >= 75: return "Good"
-    if score >= 60: return "Needs Work"
-    if score >= 40: return "Poor"
+    if score >= 90:
+        return "Excellent"
+    if score >= 75:
+        return "Good"
+    if score >= 60:
+        return "Needs Work"
+    if score >= 40:
+        return "Poor"
     return "Critical"
 
 
 def _score_color(score: int) -> str:
-    if score >= 75: return "var(--clean)"
-    if score >= 60: return "var(--warning)"
+    if score >= 75:
+        return "var(--clean)"
+    if score >= 60:
+        return "var(--warning)"
     return "var(--critical)"
 
 
-# ---------------------------------------------------------------------------
-# Legacy _all_findings helper (used by older code paths, kept for compat)
-# ---------------------------------------------------------------------------
+def _score_status_text(score: int) -> str:
+    if score >= 90:
+        return "STRUCTURE STABLE"
+    if score >= 75:
+        return "RISK CONTAINED"
+    if score >= 60:
+        return "ATTENTION REQUIRED"
+    if score >= 40:
+        return "ARCHITECTURE STRAIN"
+    return "CRITICAL INTEGRITY FAILURE"
 
 
-def _all_findings(result: AnalysisResult) -> list[list[object]]:
-    return [getattr(result, attr) for attr, _ in _SECTIONS]
+def _score_status_class(score: int) -> str:
+    if score >= 75:
+        return "status-clean"
+    if score >= 60:
+        return "status-warning"
+    return "status-critical"
 
 
-# ---------------------------------------------------------------------------
-# Finding → display row
-# ---------------------------------------------------------------------------
-
-
-def _finding_to_row(f: object) -> tuple[str, str]:
-    """Return ``(severity, description)`` for any finding dataclass."""
-    sev: str = getattr(f, "severity", "warning")
-
-    if hasattr(f, "class_name") and hasattr(f, "method_count"):
-        desc = (
-            f"<code>{_e(getattr(f, 'file_path'))}</code> → "
-            f"<strong>{_e(getattr(f, 'class_name'))}</strong> "
-            f"({getattr(f, 'method_count')} methods)"
-        )
-    elif hasattr(f, "app_path") and hasattr(f, "percentage"):
-        desc = (
-            f"<code>{_e(getattr(f, 'app_path'))}</code> owns "
-            f"{getattr(f, 'percentage')}% of total project code "
-            f"({getattr(f, 'app_loc'):,} / {getattr(f, 'total_loc'):,} lines)"
-        )
-    elif hasattr(f, "cycle_display"):
-        desc = (
-            f"Circular import: "
-            f"<strong>{_e(getattr(f, 'cycle_display'))}</strong>"
-        )
-    elif hasattr(f, "view_name") and hasattr(f, "orm_call_count"):
-        detail = (
-            f"contains {getattr(f, 'orm_call_count')} direct ORM calls"
-            if sev == "critical"
-            else "makes direct ORM calls"
-        )
-        desc = (
-            f"<code>{_e(getattr(f, 'file_path'))}</code> → "
-            f"<strong>{_e(getattr(f, 'view_name'))}()</strong> {detail}"
-        )
-    elif hasattr(f, "task_name"):
-        detail = (
-            "high-stakes task, no retry configured"
-            if sev == "critical"
-            else "no retry configured"
-        )
-        desc = (
-            f"<code>{_e(getattr(f, 'file_path'))}</code> → "
-            f"<strong>{_e(getattr(f, 'task_name'))}()</strong> — {detail}"
-        )
-    elif hasattr(f, "pattern") and hasattr(f, "line_number"):
-        desc = (
-            f"<code>{_e(getattr(f, 'file_path'))}:{getattr(f, 'line_number')}</code> "
-            f"→ raw SQL detected: <code>{_e(getattr(f, 'pattern'))}</code>"
-        )
-    elif hasattr(f, "migration_name") and hasattr(f, "operation"):
-        model  = getattr(f, "model_name", "")
-        field  = getattr(f, "field_name", "")
-        ctx    = (
-            f"<code>{_e(model)}.{_e(field)}</code>"  if model and field else
-            f"<code>{_e(model)}</code>"               if model           else ""
-        )
-        op = _e(getattr(f, "operation"))
-        op_display = f"<strong>{op}</strong>({ctx})" if ctx else f"<strong>{op}</strong>"
-        desc = (
-            f"<code>{_e(getattr(f, 'file_path'))}</code> → {op_display}"
-            f"<br><span style='color:var(--muted);font-size:12px'>"
-            f"ℹ {_e(getattr(f, 'message'))}</span>"
-        )
-    elif hasattr(f, "line_number"):
-        desc = (
-            f"<code>{_e(getattr(f, 'file_path'))}:{getattr(f, 'line_number')}</code> "
-            "→ ORM call inside loop — possible N+1 query risk"
-        )
-    else:
-        desc = _e(str(f))
-
-    return sev, desc
-
-
-def _e(text: str) -> str:
+def _e(text: object) -> str:
     return html.escape(str(text))
 
 
-# ---------------------------------------------------------------------------
-# Section helpers
-# ---------------------------------------------------------------------------
-
-
-def _score_arc_offset(score: int) -> str:
-    circumference = 2 * math.pi * 38
-    offset = circumference * (1 - (score / 100))
-    return f"{offset:.2f}"
-
-
-def _badge(severity: str) -> str:
-    return f'<span class="badge badge-{severity}">{severity.upper()}</span>'
+def _all_findings(result: AnalysisResult) -> list[list[object]]:
+    """Legacy helper kept for compatibility with older code paths."""
+    return [getattr(result, attr) for attr, _ in _SECTIONS]
 
 
 def _count_severities(findings: list[object]) -> tuple[int, int]:
-    critical = sum(1 for f in findings if getattr(f, "severity", "") == "critical")
-    warning  = sum(1 for f in findings if getattr(f, "severity", "") == "warning")
+    critical = sum(
+        1 for finding in findings if getattr(finding, "severity", "") == "critical"
+    )
+    warning = sum(
+        1 for finding in findings if getattr(finding, "severity", "") == "warning"
+    )
     return critical, warning
 
 
@@ -302,519 +233,941 @@ def _project_name(project_path: str) -> str:
     return normalised.split("/")[-1] if normalised else str(project_path)
 
 
-def _severity_cell(severity: str) -> str:
-    return (
-        '<div class="sev-cell">'
-        f'<div class="sev-dot {severity}"></div>'
-        f"{_badge(severity)}"
-        "</div>"
-    )
-
-
-def _render_section(
-    attr: str,
-    title: str,
-    findings: list[object],
-    skipped: bool = False,
-) -> str:
-    critical_count, warning_count = _count_severities(findings)
-    summary_parts: list[str] = []
-    if critical_count:
-        summary_parts.append(
-            f'<span class="badge badge-critical">{critical_count} critical</span>'
-        )
-    if warning_count:
-        summary_parts.append(
-            f'<span class="badge badge-warning">{warning_count} warning</span>'
-        )
-
-    header_counts = (
-        f'<div class="section-counts">{"".join(summary_parts)}</div>'
-        if summary_parts else ""
-    )
-    section_header = (
-        '<div class="section-header">'
-        f'<span class="section-name">{_e(title)}</span>'
-        f"{header_counts}"
-        "</div>"
-    )
-
-    if skipped:
-        body = '<div class="section-skipped">⊘ Skipped (--ignore flag)</div>'
-    elif not findings:
-        body = '<div class="section-clean">No issues found</div>'
-    else:
-        rows = ""
-        for f in findings:
-            sev, desc = _finding_to_row(f)
-            rows += (
-                f'<tr class="finding-row" data-severity="{sev}">'
-                f"<td>{_severity_cell(sev)}</td>"
-                f"<td>{desc}</td>"
-                "</tr>"
-            )
-        body = (
-            '<table class="findings-table">'
-            "<thead><tr><th>Severity</th><th>Finding</th></tr></thead>"
-            f"<tbody>{rows}</tbody>"
-            "</table>"
-        )
-
-    return (
-        f'<section class="section-card" data-section="{_e(_section_slug(attr))}">'
-        f"{section_header}{body}</section>"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Score breakdown section
-# ---------------------------------------------------------------------------
+def _detector_weight(detector_id: str, findings: list[object]) -> float:
+    weights = _DETECTOR_WEIGHTS.get(detector_id, {})
+    return sum(weights.get(getattr(f, "severity", "warning"), 1.0) for f in findings)
 
 
 def _impact_label_class(detector_weight: float) -> tuple[str, str]:
-    """Return (label, css_class) for a per-detector weighted score."""
-    if detector_weight == 0:   return "None",   "impact-none"
-    if detector_weight <= 3:   return "Low",    "impact-low"
-    if detector_weight <= 8:   return "Medium", "impact-medium"
-    return                            "High",   "impact-high"
+    if detector_weight == 0:
+        return "NONE", "impact-none"
+    if detector_weight <= 3:
+        return "LOW", "impact-low"
+    if detector_weight <= 8:
+        return "MEDIUM", "impact-medium"
+    return "HIGH", "impact-high"
+
+
+def _hero_insights(result: AnalysisResult) -> list[tuple[str, str]]:
+    insights: list[tuple[str, str]] = []
+
+    for detector_id, title in _SECTIONS:
+        findings = getattr(result, detector_id, [])
+        if detector_id in result.skipped_detectors:
+            continue
+        if not findings:
+            continue
+
+        critical_count, warning_count = _count_severities(findings)
+        severity = "critical" if critical_count else "warning"
+
+        if detector_id == "missing_service_layer":
+            text = f"Service layer pressure — {len(findings)} view issue(s) detected"
+        elif detector_id == "migration_safety":
+            text = f"Migration risk active — {len(findings)} unsafe operation(s)"
+        elif detector_id == "god_apps":
+            top = findings[0]
+            text = (
+                f"God app detected — {_e(getattr(top, 'app_path', 'app'))} owns "
+                f"{getattr(top, 'percentage', '?')}% of the codebase"
+            )
+        elif detector_id == "circular_imports":
+            text = f"Circular dependency risk — {len(findings)} cycle(s) detected"
+        elif detector_id == "fat_models":
+            text = f"Model bloat detected — {len(findings)} fat model(s)"
+        elif detector_id == "direct_sql":
+            text = f"Direct SQL usage — {len(findings)} raw query hotspot(s)"
+        elif detector_id == "n_plus_one":
+            text = f"Query inefficiency risk — {len(findings)} N+1 signal(s)"
+        elif detector_id == "celery_tasks":
+            text = f"Task reliability gap — {len(findings)} task(s) missing retry"
+        else:
+            text = f"{title} — {len(findings)} finding(s)"
+
+        insights.append((severity, text))
+
+    if not insights:
+        return [("clean", "All detectors clean — no architectural issues found")]
+
+    insights.sort(key=lambda item: 0 if item[0] == "critical" else 1)
+
+    if len(insights) < 4:
+        clean_titles = [
+            title
+            for detector_id, title in _SECTIONS
+            if detector_id not in result.skipped_detectors
+            and not getattr(result, detector_id)
+        ]
+        for title in clean_titles:
+            insights.append(("clean", f"{title} — Clean"))
+            if len(insights) >= 4:
+                break
+
+    return insights[:4]
+
+
+def _detector_badges(findings: list[object]) -> str:
+    critical_count, warning_count = _count_severities(findings)
+    parts: list[str] = []
+    if critical_count:
+        parts.append(
+            f'<span class="badge badge-critical">{critical_count} critical</span>'
+        )
+    if warning_count:
+        parts.append(
+            f'<span class="badge badge-warning">{warning_count} warning</span>'
+        )
+    return "".join(parts)
+
+
+def _finding_path(finding: object) -> str:
+    if hasattr(finding, "file_path"):
+        return str(getattr(finding, "file_path"))
+    if hasattr(finding, "app_path"):
+        return str(getattr(finding, "app_path"))
+    return "project"
+
+
+def _finding_title(finding: object) -> str:
+    if hasattr(finding, "class_name"):
+        return f"{_e(getattr(finding, 'class_name'))}"
+    if hasattr(finding, "view_name"):
+        return f"{_e(getattr(finding, 'view_name'))}()"
+    if hasattr(finding, "task_name"):
+        return f"{_e(getattr(finding, 'task_name'))}()"
+    if hasattr(finding, "cycle_display"):
+        return "Circular import detected"
+    if hasattr(finding, "app_path") and hasattr(finding, "percentage"):
+        return "God app detected"
+    if hasattr(finding, "pattern"):
+        return "Raw SQL detected"
+    if hasattr(finding, "migration_name") and hasattr(finding, "operation"):
+        operation = _e(getattr(finding, "operation"))
+        migration = _e(getattr(finding, "migration_name"))
+        return f"{operation} in {migration}"
+    if hasattr(finding, "line_number"):
+        return "Possible N+1 query risk"
+    return _e(str(finding))
+
+
+def _finding_summary(finding: object) -> str:
+    severity = str(getattr(finding, "severity", "warning"))
+
+    if hasattr(finding, "class_name") and hasattr(finding, "method_count"):
+        return f"{getattr(finding, 'method_count')} methods"
+
+    if hasattr(finding, "app_path") and hasattr(finding, "percentage"):
+        return (
+            f"{getattr(finding, 'percentage')}% of project code · "
+            f"{getattr(finding, 'app_loc'):,} / {getattr(finding, 'total_loc'):,} lines"
+        )
+
+    if hasattr(finding, "cycle_display"):
+        return _e(getattr(finding, "cycle_display"))
+
+    if hasattr(finding, "view_name") and hasattr(finding, "orm_call_count"):
+        orm_call_count = int(getattr(finding, "orm_call_count"))
+        call_label = "call" if orm_call_count == 1 else "calls"
+        verb = "contains" if severity == "critical" else "makes"
+        return f"{verb} {orm_call_count} direct ORM {call_label}"
+
+    if hasattr(finding, "task_name"):
+        return (
+            "high-stakes task, no retry configured"
+            if severity == "critical"
+            else "no retry configured"
+        )
+
+    if hasattr(finding, "pattern") and hasattr(finding, "line_number"):
+        return (
+            f"line {getattr(finding, 'line_number')} · "
+            f"{_e(getattr(finding, 'pattern'))}"
+        )
+
+    if hasattr(finding, "migration_name") and hasattr(finding, "operation"):
+        model = getattr(finding, "model_name", "")
+        field = getattr(finding, "field_name", "")
+        if model and field:
+            return f"{_e(model)}.{_e(field)}"
+        if model:
+            return _e(model)
+        return _e(getattr(finding, "message"))
+
+    if hasattr(finding, "line_number"):
+        return f"line {getattr(finding, 'line_number')} · ORM call inside loop"
+
+    return _e(str(finding))
+
+
+def _finding_rows(finding: object, detector_title: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = [
+        ("Detector", _e(detector_title)),
+        ("Severity", _e(str(getattr(finding, "severity", "warning")).upper())),
+    ]
+
+    if hasattr(finding, "class_name") and hasattr(finding, "method_count"):
+        rows.append(("Methods", _e(getattr(finding, "method_count"))))
+
+    elif hasattr(finding, "app_path") and hasattr(finding, "percentage"):
+        rows.append(("Ownership", f"{_e(getattr(finding, 'percentage'))}%"))
+        rows.append(
+            (
+                "Lines",
+                f"{_e(getattr(finding, 'app_loc'))} / {_e(getattr(finding, 'total_loc'))}",
+            )
+        )
+
+    elif hasattr(finding, "cycle_display"):
+        rows.append(("Cycle", _e(getattr(finding, "cycle_display"))))
+
+    elif hasattr(finding, "view_name") and hasattr(finding, "orm_call_count"):
+        rows.append(("ORM Calls", _e(getattr(finding, "orm_call_count"))))
+
+    elif hasattr(finding, "task_name"):
+        rows.append(("Reliability", "Retry configuration missing"))
+
+    elif hasattr(finding, "pattern") and hasattr(finding, "line_number"):
+        rows.append(("Line", _e(getattr(finding, "line_number"))))
+        rows.append(("Pattern", _e(getattr(finding, "pattern"))))
+
+    elif hasattr(finding, "migration_name") and hasattr(finding, "operation"):
+        rows.append(("Operation", _e(getattr(finding, "operation"))))
+        rows.append(("Advice", _e(getattr(finding, "message"))))
+
+    elif hasattr(finding, "line_number"):
+        rows.append(("Line", _e(getattr(finding, "line_number"))))
+        rows.append(("Signal", "Potential N+1 query pattern"))
+
+    return rows
+
+
+def _render_finding_card(finding: object, detector_title: str, index: int) -> str:
+    severity = str(getattr(finding, "severity", "warning"))
+    severity_class = "sv-cr" if severity == "critical" else "sv-wa"
+    path = _e(_finding_path(finding))
+    title = _finding_title(finding)
+    summary = _finding_summary(finding)
+
+    rows_html = "".join(
+        (
+            '<div class="fc-row">'
+            f'<span class="fc-lbl">{_e(label)}</span>'
+            f'<span class="fc-val">{value}</span>'
+            "</div>"
+        )
+        for label, value in _finding_rows(finding, detector_title)
+    )
+
+    return (
+        f'<article class="fc" data-severity="{_e(severity)}">'
+        f'<button class="fc-top" type="button" onclick="toggleCard(\'card-{index}\', this)">'
+        f'<span class="sv {severity_class}">{_e(severity.upper())}</span>'
+        f'<code class="fc-path">{path}</code>'
+        f'<span class="fc-fn">{title}</span>'
+        f'<span class="fc-chev" aria-hidden="true">▼</span>'
+        "</button>"
+        f'<div class="fc-det">{summary}</div>'
+        f'<div class="fc-body" id="card-{index}"><div class="fc-rows">{rows_html}</div></div>'
+        "</article>"
+    )
+
+
+def _render_group(
+    attr: str,
+    title: str,
+    findings: list[object],
+    skipped: bool,
+    start_index: int,
+) -> tuple[str, int]:
+    counts_html = _detector_badges(findings)
+    body: str
+    card_index = start_index
+
+    if skipped:
+        body = '<div class="fg-note section-skipped">⊘ Skipped (--ignore flag)</div>'
+    elif not findings:
+        body = '<div class="fg-note section-clean">No issues found</div>'
+    else:
+        cards: list[str] = []
+        for finding in findings:
+            cards.append(_render_finding_card(finding, title, card_index))
+            card_index += 1
+        body = "".join(cards)
+
+    html_block = (
+        f'<section class="fg" data-section="{_e(_section_slug(attr))}">'
+        f'<button class="fg-head" type="button" onclick="toggleGroup(\'group-{_e(_section_slug(attr))}\', this)">'
+        '<span class="fg-left">'
+        f'<span class="fg-name">{_e(title)}</span>'
+        f"{counts_html}"
+        "</span>"
+        '<span class="fg-chev" aria-hidden="true">▼</span>'
+        "</button>"
+        f'<div class="fg-body" id="group-{_e(_section_slug(attr))}">{body}</div>'
+        "</section>"
+    )
+    return html_block, card_index
 
 
 def _render_breakdown(result: AnalysisResult) -> str:
-    """Render the per-detector score breakdown table."""
-    rows = ""
-    for detector_id, title in _SECTIONS:
-        if detector_id in result.skipped_detectors:
-            continue
-        findings    = getattr(result, detector_id, [])
-        weights     = _DETECTOR_WEIGHTS.get(detector_id, {})
-        det_weight  = sum(
-            weights.get(getattr(f, "severity", "warning"), 1.0)
-            for f in findings
-        )
-        count       = len(findings)
-        label, cls  = _impact_label_class(det_weight)
-        count_text  = (
-            f"{count} finding{'s' if count != 1 else ''}"
-            if count > 0 else "Clean"
-        )
-        weight_text = f"{det_weight:.1f}" if det_weight > 0 else "—"
+    visible = [
+        (detector_id, title, getattr(result, detector_id))
+        for detector_id, title in _SECTIONS
+        if detector_id not in result.skipped_detectors
+    ]
+    max_weight = max((_detector_weight(detector_id, findings) for detector_id, _, findings in visible), default=1.0)
+    max_weight = max(max_weight, 1.0)
 
-        rows += (
-            f"<tr>"
-            f"<td>{_e(title)}</td>"
-            f'<td class="bd-count">{count_text}</td>'
-            f'<td class="bd-weight">{weight_text}</td>'
-            f'<td><span class="impact-badge {cls}">{label}</span></td>'
-            f"</tr>"
+    rows: list[str] = []
+    for detector_id, title, findings in visible:
+        detector_weight = _detector_weight(detector_id, findings)
+        label, impact_class = _impact_label_class(detector_weight)
+        count = len(findings)
+        count_text = f"{count} finding{'s' if count != 1 else ''}" if count else "Clean"
+        row_class = (
+            "r-cr"
+            if any(getattr(f, "severity", "") == "critical" for f in findings)
+            else "r-wa"
+            if findings
+            else "r-ok"
+        )
+        bar_class = (
+            "b-cr"
+            if row_class == "r-cr"
+            else "b-wa"
+            if row_class == "r-wa"
+            else "b-ok"
+        )
+        width = 0 if detector_weight == 0 else max(6, round((detector_weight / max_weight) * 100))
+        weight_text = f"{detector_weight:.1f}" if detector_weight else "—"
+
+        rows.append(
+            f'<div class="det-row {row_class}">'
+            '<div class="d-info">'
+            f'<span class="d-name">{_e(title)}</span>'
+            f'<span class="d-cnt">{_e(count_text)}</span>'
+            "</div>"
+            f'<div class="d-bg"><div class="d-bar {bar_class}" style="--w:{width}%"></div></div>'
+            f'<span class="d-wt">{_e(weight_text)}</span>'
+            f'<span class="imp {impact_class}">{_e(label)}</span>'
+            "</div>"
         )
 
     return (
-        '<section class="section-card breakdown-card">'
-        '<div class="section-header">'
-        '<span class="section-name">Score Breakdown</span>'
-        '<span class="section-breakdown-hint">weighted impact per detector</span>'
-        "</div>"
-        '<table class="breakdown-table">'
-        "<thead><tr>"
-        "<th>Detector</th><th>Findings</th>"
-        "<th>Weight</th><th>Impact</th>"
-        "</tr></thead>"
-        f"<tbody>{rows}</tbody>"
-        "</table>"
+        '<section class="s-wrap detector-section" data-reveal>'
+        '<div class="s-eye">Detector Analysis</div>'
+        '<div class="s-title">Score Breakdown</div>'
+        f'<div class="det-wrap">{"".join(rows)}</div>'
         "</section>"
     )
 
 
-# ---------------------------------------------------------------------------
-# Public HTML API
-# ---------------------------------------------------------------------------
+def _render_detector_status_grid(result: AnalysisResult) -> str:
+    cards: list[str] = []
+    for detector_id, title in _SECTIONS:
+        if detector_id in result.skipped_detectors:
+            cards.append(
+                '<div class="clean-row clean-skip">'
+                '<span class="clean-dot clean-dot-skip"></span>'
+                f"{_e(title)} — Skipped"
+                "</div>"
+            )
+            continue
+        if not getattr(result, detector_id):
+            cards.append(
+                '<div class="clean-row">'
+                '<span class="clean-dot"></span>'
+                f"{_e(title)} — Clean"
+                "</div>"
+            )
+
+    if not cards:
+        return ""
+
+    return (
+        '<section class="s-wrap" data-reveal>'
+        '<div class="s-eye">Coverage</div>'
+        '<div class="s-title">Detector Status</div>'
+        f'<div class="clean-grid">{"".join(cards)}</div>'
+        "</section>"
+    )
 
 
 def generate_html(result: AnalysisResult, project_path: str) -> str:
     """Return a self-contained HTML report string."""
-    sc          = compute_score(result, project_path)
-    grade       = score_grade(sc)
-    label       = score_label(sc)
-    color       = _score_color(sc)
-    arc_offset  = _score_arc_offset(sc)
-    proj_name   = _project_name(project_path)
-    generated   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    score = compute_score(result, project_path)
+    grade = score_grade(score)
+    label = score_label(score)
+    color = _score_color(score)
+    project_name = _project_name(project_path)
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    status_text = _score_status_text(score)
+    status_class = _score_status_class(score)
 
     total_warnings = sum(
-        sum(1 for f in getattr(result, attr) if getattr(f, "severity", "") == "warning")
+        sum(1 for finding in getattr(result, attr) if getattr(finding, "severity", "") == "warning")
         for attr, _ in _SECTIONS
     )
     total_criticals = sum(
-        sum(1 for f in getattr(result, attr) if getattr(f, "severity", "") == "critical")
+        sum(1 for finding in getattr(result, attr) if getattr(finding, "severity", "") == "critical")
         for attr, _ in _SECTIONS
     )
     clean_sections = sum(
-        1 for attr, _ in _SECTIONS
+        1
+        for attr, _ in _SECTIONS
         if not getattr(result, attr) and attr not in result.skipped_detectors
     )
+    total_findings = total_criticals + total_warnings
 
-    sections_html   = "\n".join(
-        _render_section(
-            attr, title,
+    insights_html = "".join(
+        f'<div class="h-ind {("bad" if severity == "critical" else "warn" if severity == "warning" else "good")}">'
+        f'<span class="i-d {("i-pulse" if severity == "critical" else "i-wa" if severity == "warning" else "i-ok")}"></span>'
+        f"{text}"
+        "</div>"
+        for severity, text in _hero_insights(result)
+    )
+
+    breakdown_html = _render_breakdown(result)
+
+    groups: list[str] = []
+    card_index = 0
+    for attr, title in _SECTIONS:
+        group_html, card_index = _render_group(
+            attr,
+            title,
             getattr(result, attr),
             skipped=attr in result.skipped_detectors,
+            start_index=card_index,
         )
-        for attr, title in _SECTIONS
-    )
-    breakdown_html  = _render_breakdown(result)
+        groups.append(group_html)
+    groups_html = "\n".join(groups)
+
+    detector_status_html = _render_detector_status_grid(result)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>django-arch-check report</title>
+  <title>django-arch-check · Architecture Intelligence</title>
   <style>
     :root {{
-      --bg:             oklch(13% 0.014 240);
-      --surface:        oklch(17% 0.013 240);
-      --surface2:       oklch(21% 0.011 240);
-      --fg:             oklch(93% 0.005 240);
-      --muted:          oklch(54% 0.012 240);
-      --border:         oklch(27% 0.011 240);
-      --border2:        oklch(23% 0.010 240);
-
-      --critical:       oklch(64% 0.22 25);
-      --critical-dim:   oklch(50% 0.18 25);
-      --critical-bg:    oklch(18% 0.07 25);
-      --critical-bdr:   oklch(32% 0.13 25);
-
-      --warning:        oklch(76% 0.14 55);
-      --warning-dim:    oklch(62% 0.12 55);
-      --warning-bg:     oklch(17% 0.05 55);
-      --warning-bdr:    oklch(34% 0.10 55);
-
-      --clean:          oklch(68% 0.18 160);
-      --clean-bg:       oklch(17% 0.06 160);
-      --clean-bdr:      oklch(30% 0.10 160);
-
-      --impact-medium:  oklch(70% 0.15 40);
-
-      --code-fg:        oklch(72% 0.10 200);
-      --mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-      --sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+      --bg:#05070f; --s1:#090d1a; --s2:#0d1220; --s3:#111826;
+      --fg:#e4e8f4; --mu:#464e68; --mu2:#606880;
+      --br:#181f34; --br2:#1d2540;
+      --critical:oklch(64% 0.26 22); --critical-dim:oklch(50% 0.20 22);
+      --critical-bg:oklch(14% 0.09 22); --critical-b:oklch(28% 0.15 22);
+      --warning:oklch(76% 0.18 52); --warning-dim:oklch(60% 0.14 52);
+      --warning-bg:oklch(14% 0.07 52); --warning-b:oklch(30% 0.11 52);
+      --clean:oklch(68% 0.18 162);
+      --clean-bg:oklch(14% 0.07 162); --clean-b:oklch(28% 0.11 162);
+      --accent:oklch(72% 0.20 202);
+      --accent-bg:oklch(14% 0.07 202); --accent-b:oklch(26% 0.10 202);
+      --impact-medium:oklch(70% 0.15 40);
+      --mono:'JetBrains Mono','IBM Plex Mono',ui-monospace,monospace;
+      --sans:'Aptos','Segoe UI',Tahoma,sans-serif;
     }}
 
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    html {{ scroll-behavior: smooth; }}
+    *,*::before,*::after {{ box-sizing:border-box; margin:0; padding:0; }}
+    html {{ scroll-behavior:smooth; }}
     body {{
-      font-family: var(--sans);
-      font-size: 14px;
-      color: var(--fg);
+      font-family:var(--sans); font-size:14px; line-height:1.6; color:var(--fg);
       background:
-        radial-gradient(circle at top left, oklch(19% 0.03 245 / 0.65), transparent 34%),
-        radial-gradient(circle at top right, oklch(18% 0.04 25 / 0.30), transparent 28%),
-        var(--bg);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
+        radial-gradient(circle at 15% 20%, oklch(18% 0.04 240 / 0.7), transparent 28%),
+        radial-gradient(circle at 82% 22%, oklch(16% 0.09 22 / 0.34), transparent 24%),
+        linear-gradient(180deg, #060913 0%, #05070f 100%);
+      -webkit-font-smoothing:antialiased; overflow-x:hidden;
     }}
-    ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
-    ::-webkit-scrollbar-track {{ background: var(--bg); }}
-    ::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 3px; }}
+    body::before {{
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+      background-image:
+        linear-gradient(oklch(30% 0.02 240 / 0.14) 1px, transparent 1px),
+        linear-gradient(90deg, oklch(30% 0.02 240 / 0.14) 1px, transparent 1px);
+      background-size:48px 48px;
+      mask-image:linear-gradient(180deg, rgba(0,0,0,.4), rgba(0,0,0,.07));
+      animation:gridMove 26s linear infinite;
+    }}
+    body::after {{
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+      background:repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(2,4,10,.14) 2px,
+        rgba(2,4,10,.14) 4px
+      );
+      opacity:.25;
+    }}
+    ::-webkit-scrollbar {{ width:6px; height:6px; }}
+    ::-webkit-scrollbar-track {{ background:var(--bg); }}
+    ::-webkit-scrollbar-thumb {{ background:var(--br2); border-radius:4px; }}
 
-    /* ── Sticky bar ─────────────────────────────── */
-    .sticky-bar {{
-      position: sticky; top: 0; z-index: 100;
-      background: oklch(13% 0.014 240 / 0.88);
-      backdrop-filter: blur(14px) saturate(1.4);
-      -webkit-backdrop-filter: blur(14px) saturate(1.4);
-      border-bottom: 1px solid var(--border2);
-      padding: 9px 28px;
-      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    .nav {{
+      position:sticky; top:0; z-index:30; height:54px;
+      background:oklch(5% 0.02 240 / .84);
+      backdrop-filter:blur(22px) saturate(1.5);
+      border-bottom:1px solid var(--br);
     }}
-    .sticky-brand {{ font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.02em; white-space: nowrap; }}
-    .sticky-divider {{ width: 1px; height: 16px; background: var(--border); flex-shrink: 0; }}
-    .sticky-score-group {{ display: flex; align-items: baseline; gap: 6px; }}
-    .sticky-score-num {{
-      font-size: 18px; font-weight: 800;
-      color: {color};
-      font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1;
+    .nav-in {{
+      max-width:1180px; margin:0 auto; height:100%; padding:0 28px;
+      display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     }}
-    .sticky-score-denom {{ font-size: 12px; color: var(--muted); }}
-    .sticky-grade {{
-      font-size: 13px; font-weight: 800;
-      color: {color};
-      border: 1.5px solid {color};
-      border-radius: 4px;
-      padding: 0px 6px;
-      line-height: 1.6;
+    .n-brand {{
+      font-family:var(--mono); font-size:12px; font-weight:700; white-space:nowrap;
+      display:flex; align-items:center; gap:8px;
     }}
-    .sticky-pills {{ display: flex; gap: 6px; }}
-    .sticky-pill {{
-      font-size: 11px; font-weight: 700; padding: 2px 8px;
-      border-radius: 4px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+    .n-ico {{ color:{color}; }}
+    .n-div {{ width:1px; height:16px; background:var(--br2); flex-shrink:0; }}
+    .n-score {{ display:flex; align-items:baseline; gap:5px; }}
+    .n-num {{
+      font-family:var(--mono); font-size:19px; font-weight:900; color:{color};
+      letter-spacing:-.03em; line-height:1;
     }}
-    .sticky-pill.critical {{ background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-bdr); }}
-    .sticky-pill.warning  {{ background: var(--warning-bg);  color: var(--warning);  border: 1px solid var(--warning-bdr);  }}
-    .filter-group {{
-      display: flex; gap: 2px; margin-left: auto;
-      background: var(--surface2); border-radius: 8px; padding: 3px;
-      border: 1px solid var(--border2);
+    .n-sep {{ font-size:12px; color:var(--mu); }}
+    .n-grade {{
+      font-size:12px; font-weight:800; color:{color};
+      border:1.5px solid {color}; border-radius:4px; padding:1px 6px;
     }}
-    .filter-btn {{
-      font-family: var(--sans); font-size: 11px; font-weight: 600;
-      padding: 4px 14px; border: none; border-radius: 6px; cursor: pointer;
-      background: transparent; color: var(--muted);
-      letter-spacing: 0.05em; text-transform: uppercase;
-      transition: color 0.12s, background 0.12s;
+    .n-pills {{ display:flex; gap:6px; }}
+    .pill {{
+      font-family:var(--mono); font-size:10px; font-weight:700;
+      padding:2px 8px; border-radius:4px; letter-spacing:.03em; text-transform:uppercase;
     }}
-    .filter-btn:hover {{ color: var(--fg); }}
-    .filter-btn.active {{ background: var(--surface); color: var(--fg); }}
-    .filter-btn.active.f-critical {{ color: var(--critical); }}
-    .filter-btn.active.f-warning  {{ color: var(--warning);  }}
+    .p-cr {{ background:var(--critical-bg); color:var(--critical); border:1px solid var(--critical-b); }}
+    .p-wa {{ background:var(--warning-bg); color:var(--warning); border:1px solid var(--warning-b); }}
+    .n-filters {{
+      margin-left:auto; display:flex; gap:2px; background:var(--s3);
+      border-radius:8px; padding:3px; border:1px solid var(--br);
+    }}
+    .f-btn {{
+      font-family:var(--sans); font-size:11px; font-weight:600;
+      padding:4px 12px; border:none; border-radius:6px; cursor:pointer;
+      background:transparent; color:var(--mu); letter-spacing:.05em; text-transform:uppercase;
+    }}
+    .f-btn:hover {{ color:var(--fg); }}
+    .f-btn.active {{ background:var(--s2); color:var(--fg); }}
 
-    /* ── Layout ─────────────────────────────────── */
-    .container {{ max-width: 1040px; margin: 0 auto; padding: 44px 28px 88px; }}
-
-    /* ── Hero ───────────────────────────────────── */
     .hero {{
-      display: grid; grid-template-columns: 1fr auto;
-      align-items: center; gap: 32px;
-      margin-bottom: 36px; padding-bottom: 36px;
-      border-bottom: 1px solid var(--border2);
+      position:relative; z-index:1; min-height:78vh; display:flex; align-items:center;
+      padding:76px 0 54px; overflow:hidden;
     }}
-    .hero-eyebrow {{ font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }}
-    .hero-title {{ font-size: 26px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; }}
-    .hero-title .dim {{ color: var(--muted); font-weight: 400; }}
-    .hero-meta {{ display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; }}
-    .meta-item {{ display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }}
-    .meta-item code {{
-      font-family: var(--mono); font-size: 11px; color: var(--code-fg);
-      background: var(--surface2); border: 1px solid var(--border);
-      padding: 1px 6px; border-radius: 4px;
+    .hero-shell {{
+      max-width:1180px; margin:0 auto; width:100%; padding:0 44px;
+      display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(260px, .8fr); gap:36px;
+      align-items:center;
+    }}
+    .h-content {{ max-width:720px; }}
+    .h-eye {{
+      font-family:var(--mono); font-size:11px; color:var(--mu2);
+      letter-spacing:.12em; text-transform:uppercase; margin-bottom:28px;
+    }}
+    .h-score {{
+      display:flex; align-items:flex-end; gap:18px; margin-bottom:18px;
+    }}
+    .h-num {{
+      font-size:clamp(5rem, 17vw, 9.5rem); font-weight:900; line-height:.88;
+      letter-spacing:-.05em; color:{color}; text-shadow:0 0 80px color-mix(in srgb, {color} 35%, transparent);
+    }}
+    .h-meta {{ display:flex; flex-direction:column; gap:6px; padding-bottom:12px; }}
+    .h-denom {{ font-family:var(--mono); font-size:1.5rem; color:var(--mu); }}
+    .h-grade {{ font-family:var(--mono); font-size:2.7rem; font-weight:900; color:{color}; line-height:1; }}
+    .h-title {{
+      font-size:clamp(2rem, 4vw, 3.4rem); font-weight:900; letter-spacing:-.04em;
+      line-height:1.02; margin-bottom:14px;
+    }}
+    .h-sub {{
+      max-width:62ch; font-size:15px; color:#b1b9cf; margin-bottom:22px;
+    }}
+    .h-badge {{
+      display:inline-flex; align-items:center; gap:10px; border-radius:6px;
+      padding:8px 16px; font-family:var(--mono); font-size:12px; font-weight:700;
+      letter-spacing:.10em; margin-bottom:28px;
+    }}
+    .status-critical {{ background:var(--critical-bg); border:1px solid var(--critical-b); color:var(--critical); }}
+    .status-warning {{ background:var(--warning-bg); border:1px solid var(--warning-b); color:var(--warning); }}
+    .status-clean {{ background:var(--clean-bg); border:1px solid var(--clean-b); color:var(--clean); }}
+    .h-dot {{ width:8px; height:8px; border-radius:50%; background:currentColor; }}
+    .h-inds {{ display:flex; flex-direction:column; gap:10px; margin-bottom:30px; }}
+    .h-ind {{ display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:12px; letter-spacing:.04em; }}
+    .h-ind.bad {{ color:var(--critical); }}
+    .h-ind.warn {{ color:var(--warning); }}
+    .h-ind.good {{ color:var(--clean); }}
+    .i-d {{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }}
+    .i-pulse {{ background:var(--critical); box-shadow:0 0 0 0 color-mix(in srgb, var(--critical) 65%, transparent); animation:critPulse 1.3s ease-in-out infinite; }}
+    .i-wa {{ background:var(--warning); }}
+    .i-ok {{ background:var(--clean); }}
+    .h-foot {{
+      font-family:var(--mono); font-size:12px; color:var(--mu);
+      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+    }}
+    .h-code {{
+      color:var(--accent); background:var(--accent-bg); border:1px solid var(--accent-b);
+      padding:1px 6px; border-radius:3px; font-family:inherit;
+    }}
+    .hero-side {{
+      position:relative; min-height:420px; display:flex; align-items:center; justify-content:center;
+    }}
+    .hero-side::before, .hero-side::after {{
+      content:''; position:absolute; border-radius:50%; filter:blur(2px);
+    }}
+    .hero-side::before {{
+      width:280px; height:280px;
+      background:radial-gradient(circle, color-mix(in srgb, {color} 24%, transparent) 0%, transparent 68%);
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, {color} 28%, transparent),
+        0 0 100px color-mix(in srgb, {color} 16%, transparent);
+      animation:slowFloat 9s ease-in-out infinite;
+    }}
+    .hero-side::after {{
+      width:390px; height:390px;
+      border:1px solid color-mix(in srgb, {color} 30%, transparent);
+      background:
+        radial-gradient(circle at 50% 50%, color-mix(in srgb, {color} 10%, transparent), transparent 58%),
+        repeating-radial-gradient(circle at center, transparent 0 24px, rgba(255,255,255,.03) 24px 25px);
+      animation:slowFloat 12s ease-in-out infinite reverse;
+    }}
+    .hero-orbit {{
+      position:absolute; inset:14% 8%;
+      border:1px solid rgba(255,255,255,.07); border-radius:32px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.03), transparent 38%),
+        radial-gradient(circle at 65% 35%, color-mix(in srgb, {color} 12%, transparent), transparent 35%),
+        var(--s1);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 30px 70px rgba(0,0,0,.35);
+      overflow:hidden;
+    }}
+    .hero-orbit::before {{
+      content:''; position:absolute; inset:16px;
+      border:1px solid rgba(255,255,255,.05); border-radius:24px;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size:28px 28px;
+      mask-image:radial-gradient(circle, black 52%, transparent 92%);
+    }}
+    .orbit-score {{
+      position:absolute; inset:0; display:grid; place-items:center;
+      font-family:var(--mono); text-align:center;
+    }}
+    .orbit-score strong {{
+      display:block; font-size:4.4rem; line-height:1; color:{color}; letter-spacing:-.05em;
+    }}
+    .orbit-score span {{
+      display:block; margin-top:8px; font-size:12px; letter-spacing:.1em;
+      color:var(--mu2); text-transform:uppercase;
+    }}
+    .orbit-score em {{
+      display:inline-block; margin-top:10px; padding:3px 10px; border-radius:999px;
+      font-style:normal; font-size:11px; font-weight:800; color:{color};
+      border:1px solid color-mix(in srgb, {color} 45%, transparent);
+      background:color-mix(in srgb, {color} 12%, transparent);
     }}
 
-    /* ── Score ring ─────────────────────────────── */
-    .score-ring-wrap {{ display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }}
-    .score-arc {{
-      animation: ring-fill 1.1s cubic-bezier(0.4,0,0.2,1) 0.2s both;
-      stroke: {color};
-    }}
-    @keyframes ring-fill {{
-      from {{ stroke-dashoffset: 238.76; }}
-      to   {{ stroke-dashoffset: {arc_offset}; }}
-    }}
-    .score-ring-grade {{
-      font-size: 12px; font-weight: 800;
-      color: {color};
-      text-transform: uppercase; letter-spacing: 0.06em;
-    }}
-    .score-ring-label {{ font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }}
+    .container {{ position:relative; z-index:1; max-width:1140px; margin:0 auto; padding:10px 44px 100px; }}
+    .s-wrap {{ margin-bottom:64px; }}
+    .s-eye {{ font-family:var(--mono); font-size:11px; color:var(--mu2); letter-spacing:.12em; text-transform:uppercase; margin-bottom:6px; }}
+    .s-title {{ font-size:1.8rem; font-weight:800; letter-spacing:-.03em; margin-bottom:24px; }}
+    [data-reveal] {{ opacity:0; transform:translateY(18px); transition:opacity .6s ease, transform .6s ease; }}
+    [data-reveal].revealed {{ opacity:1; transform:none; }}
 
-    /* ── Stats row ──────────────────────────────── */
-    .stats-row {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 32px; }}
-    .stat-card {{ background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; padding: 18px 22px; }}
-    .stat-card.critical {{ border-color: var(--critical-bdr); }}
-    .stat-card.warning  {{ border-color: var(--warning-bdr);  }}
-    .stat-card.clean    {{ border-color: var(--clean-bdr);    }}
-    .stat-card.grade    {{ border-color: {color};             }}
-    .stat-num {{ font-size: 36px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }}
-    .stat-card.critical .stat-num {{ color: var(--critical); }}
-    .stat-card.warning  .stat-num {{ color: var(--warning);  }}
-    .stat-card.clean    .stat-num {{ color: var(--clean);    }}
-    .stat-card.grade    .stat-num {{ color: {color};         font-size: 32px; }}
-    .stat-label {{ margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }}
+    .i-grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }}
+    .ic {{
+      background:var(--s1); border:1px solid var(--br); border-radius:14px;
+      padding:24px 22px; box-shadow:0 12px 36px rgba(0,0,0,.22);
+    }}
+    .ic.g-cr {{ border-color:var(--critical-b); }}
+    .ic.g-wa {{ border-color:var(--warning-b); }}
+    .ic.g-ok {{ border-color:var(--clean-b); }}
+    .ic-num {{
+      font-size:3.6rem; font-weight:900; line-height:1; letter-spacing:-.04em;
+      font-variant-numeric:tabular-nums;
+    }}
+    .ic.g-cr .ic-num,.ic.g-cr .ic-sub {{ color:var(--critical); }}
+    .ic.g-wa .ic-num,.ic.g-wa .ic-sub {{ color:var(--warning); }}
+    .ic.g-ok .ic-num,.ic.g-ok .ic-sub {{ color:var(--clean); }}
+    .ic-lbl {{ margin-top:8px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mu); font-weight:600; }}
+    .ic-sub {{ font-size:11px; margin-top:4px; }}
 
-    /* ── Section cards ──────────────────────────── */
-    .section-card {{ background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }}
-    .section-header {{ display: flex; align-items: center; gap: 10px; padding: 13px 20px; background: var(--surface2); border-bottom: 1px solid var(--border2); }}
-    .section-name {{ font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }}
-    .section-counts {{ display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }}
-    .section-breakdown-hint {{ font-size: 11px; color: var(--muted); margin-left: auto; }}
+    .det-wrap {{ background:var(--s1); border:1px solid var(--br); border-radius:14px; overflow:hidden; }}
+    .det-row {{
+      display:grid; grid-template-columns:220px 1fr 76px 88px; align-items:center;
+      gap:18px; padding:14px 24px; border-bottom:1px solid var(--br);
+    }}
+    .det-row:last-child {{ border-bottom:none; }}
+    .det-row:hover {{ background:var(--s2); }}
+    .d-info {{ display:flex; flex-direction:column; gap:2px; }}
+    .d-name {{ font-size:13px; font-weight:600; }}
+    .d-cnt {{ font-family:var(--mono); font-size:11px; color:var(--mu); }}
+    .r-cr .d-name {{ color:var(--critical); }}
+    .r-wa .d-name {{ color:var(--warning); }}
+    .r-ok .d-name {{ color:var(--mu2); }}
+    .d-bg {{ background:var(--s3); border-radius:999px; height:6px; overflow:hidden; }}
+    .d-bar {{
+      height:100%; border-radius:999px; width:var(--w,0%);
+      transition:width 1.2s cubic-bezier(.2,.8,.2,1) .2s;
+    }}
+    .b-cr {{ background:linear-gradient(90deg,var(--critical-dim),var(--critical)); }}
+    .b-wa {{ background:linear-gradient(90deg,var(--warning-dim),var(--warning)); }}
+    .b-ok {{ background:linear-gradient(90deg,color-mix(in srgb, var(--clean) 35%, transparent),var(--clean)); }}
+    .d-wt {{ font-family:var(--mono); font-size:12px; color:var(--mu); text-align:right; }}
+    .imp {{
+      font-family:var(--mono); font-size:10px; font-weight:700; padding:3px 8px;
+      border-radius:4px; letter-spacing:.04em; text-align:center;
+    }}
+    .impact-high {{ background:var(--critical-bg); color:var(--critical); border:1px solid var(--critical-b); }}
+    .impact-medium {{ background:oklch(14% 0.06 40); color:var(--impact-medium); border:1px solid oklch(30% 0.10 40); }}
+    .impact-low {{ background:var(--warning-bg); color:var(--warning); border:1px solid var(--warning-b); }}
+    .impact-none {{ background:var(--s3); color:var(--mu2); border:1px solid var(--br2); }}
+
+    .fg {{
+      background:var(--s1); border:1px solid var(--br); border-radius:12px;
+      margin-bottom:10px; overflow:hidden;
+    }}
+    .fg.group-hidden {{ display:none; }}
+    .fg-head {{
+      width:100%; display:flex; align-items:center; justify-content:space-between;
+      gap:14px; padding:14px 20px; border:none; background:var(--s2);
+      color:inherit; cursor:pointer; text-align:left;
+    }}
+    .fg-head:hover {{ background:var(--s3); }}
+    .fg-left {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
+    .fg-name {{ font-size:14px; font-weight:700; }}
+    .fg-chev {{ color:var(--mu); transition:transform .22s ease; }}
+    .fg-head.collapsed .fg-chev {{ transform:rotate(-90deg); }}
+    .fg-body.collapsed {{ display:none; }}
+    .fg-note {{ padding:16px 20px; }}
+    .section-clean,.section-skipped {{
+      display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600;
+    }}
+    .section-clean {{ color:var(--clean); }}
+    .section-skipped {{ color:var(--mu2); }}
+    .section-clean::before,.section-skipped::before {{
+      content:''; width:7px; height:7px; border-radius:50%; flex-shrink:0;
+    }}
+    .section-clean::before {{ background:var(--clean); }}
+    .section-skipped::before {{ background:var(--mu2); }}
 
     .badge {{
-      display: inline-flex; align-items: center;
-      padding: 2px 7px; border-radius: 4px;
-      font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
-      text-transform: uppercase; font-variant-numeric: tabular-nums;
+      display:inline-flex; align-items:center; padding:2px 7px; border-radius:4px;
+      font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+      font-variant-numeric:tabular-nums;
     }}
-    .badge-critical {{ background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-bdr); }}
-    .badge-warning  {{ background: var(--warning-bg);  color: var(--warning);  border: 1px solid var(--warning-bdr);  }}
+    .badge-critical {{ background:var(--critical-bg); color:var(--critical); border:1px solid var(--critical-b); }}
+    .badge-warning {{ background:var(--warning-bg); color:var(--warning); border:1px solid var(--warning-b); }}
 
-    .section-clean, .section-skipped {{
-      padding: 14px 20px; font-size: 13px; font-weight: 500;
-      display: flex; align-items: center; gap: 10px;
+    .fc {{ border-top:1px solid var(--br); }}
+    .fc:first-child {{ border-top:none; }}
+    .fc.fc-hidden {{ display:none; }}
+    .fc-top {{
+      width:100%; display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap;
+      padding:13px 20px 6px; border:none; background:transparent; color:inherit;
+      cursor:pointer; text-align:left;
     }}
-    .section-clean   {{ color: var(--clean); }}
-    .section-skipped {{ color: var(--muted); }}
-    .section-clean::before, .section-skipped::before {{
-      content: ''; display: block; width: 6px; height: 6px;
-      border-radius: 50%; flex-shrink: 0;
+    .fc:hover {{ background:var(--s2); }}
+    .fc-chev {{ margin-left:auto; color:var(--mu); transition:transform .22s ease; }}
+    .fc-top.open .fc-chev {{ transform:rotate(180deg); }}
+    .sv {{
+      font-family:var(--mono); font-size:10px; font-weight:700; padding:2px 7px;
+      border-radius:4px; letter-spacing:.04em; flex-shrink:0; margin-top:2px;
     }}
-    .section-clean::before   {{ background: var(--clean); }}
-    .section-skipped::before {{ background: var(--muted); }}
+    .sv-cr {{ background:var(--critical-bg); color:var(--critical); border:1px solid var(--critical-b); }}
+    .sv-wa {{ background:var(--warning-bg); color:var(--warning); border:1px solid var(--warning-b); }}
+    .fc-path {{
+      font-family:var(--mono); font-size:11px; color:var(--accent);
+      background:var(--accent-bg); border:1px solid var(--accent-b);
+      padding:2px 6px; border-radius:4px; flex-shrink:0;
+    }}
+    .fc-fn {{ font-size:13px; font-weight:600; flex:1; min-width:0; }}
+    .fc-det {{ padding:0 20px 12px 108px; font-size:13px; color:#b8bfd4; }}
+    .fc-body {{ display:none; }}
+    .fc-body.open {{ display:block; }}
+    .fc-rows {{ padding:0 20px 16px 108px; display:flex; flex-direction:column; gap:7px; }}
+    .fc-row {{ display:flex; gap:12px; align-items:flex-start; font-size:12px; }}
+    .fc-lbl {{
+      width:72px; flex-shrink:0; font-family:var(--mono); font-size:10px;
+      font-weight:700; color:var(--mu); letter-spacing:.04em; padding-top:1px;
+      text-transform:uppercase;
+    }}
+    .fc-val {{ color:#c8d0e3; }}
 
-    /* ── Findings table ─────────────────────────── */
-    .findings-table {{ width: 100%; border-collapse: collapse; }}
-    .findings-table thead th {{
-      text-align: left; padding: 7px 20px;
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: var(--muted); background: var(--surface2);
-      border-bottom: 1px solid var(--border2); font-weight: 600;
+    .clean-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; }}
+    .clean-row {{
+      display:flex; align-items:center; gap:10px; background:var(--s1); border:1px solid var(--clean-b);
+      border-radius:8px; padding:11px 15px; font-family:var(--mono); font-size:11px; color:var(--clean);
     }}
-    .findings-table thead th:first-child {{ width: 130px; }}
-    .finding-row td {{ padding: 10px 20px; border-bottom: 1px solid var(--border2); font-size: 13px; vertical-align: middle; line-height: 1.5; }}
-    .finding-row:last-child td {{ border-bottom: none; }}
-    .finding-row {{ transition: background 0.1s; }}
-    .finding-row:hover {{ background: var(--surface2); }}
-    .finding-row td code {{ font-family: var(--mono); font-size: 11.5px; color: var(--code-fg); background: oklch(20% 0.015 200 / 0.6); border: 1px solid oklch(30% 0.012 200 / 0.5); padding: 1px 5px; border-radius: 3px; }}
-    .finding-row td strong {{ color: var(--fg); font-weight: 600; }}
+    .clean-skip {{ color:var(--mu2); border-color:var(--br2); }}
+    .clean-dot {{ width:6px; height:6px; border-radius:50%; background:var(--clean); flex-shrink:0; }}
+    .clean-dot-skip {{ background:var(--mu2); }}
 
-    .sev-cell {{ display: flex; align-items: center; gap: 7px; }}
-    .sev-dot  {{ width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }}
-    .sev-dot.critical {{ background: var(--critical); box-shadow: 0 0 5px var(--critical-dim); }}
-    .sev-dot.warning  {{ background: var(--warning);  }}
-
-    /* ── Breakdown table ────────────────────────── */
-    .breakdown-table {{ width: 100%; border-collapse: collapse; }}
-    .breakdown-table thead th {{
-      text-align: left; padding: 7px 20px;
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: var(--muted); background: var(--surface2);
-      border-bottom: 1px solid var(--border2); font-weight: 600;
-    }}
-    .breakdown-table td {{
-      padding: 9px 20px; border-bottom: 1px solid var(--border2);
-      font-size: 13px; vertical-align: middle;
-    }}
-    .breakdown-table tr:last-child td {{ border-bottom: none; }}
-    .breakdown-table tr:hover {{ background: var(--surface2); }}
-    .bd-count  {{ color: var(--muted); font-size: 12px; }}
-    .bd-weight {{ font-family: var(--mono); font-size: 12px; color: var(--code-fg); }}
-    .impact-badge {{
-      display: inline-flex; align-items: center; padding: 2px 8px;
-      border-radius: 4px; font-size: 11px; font-weight: 700;
-      letter-spacing: 0.04em; text-transform: uppercase;
-    }}
-    .impact-none   {{ background: var(--clean-bg);    color: var(--clean);          border: 1px solid var(--clean-bdr);    }}
-    .impact-low    {{ background: var(--warning-bg);  color: var(--warning);        border: 1px solid var(--warning-bdr);  }}
-    .impact-medium {{ background: oklch(17% 0.05 40); color: var(--impact-medium);  border: 1px solid oklch(34% 0.10 40);  }}
-    .impact-high   {{ background: var(--critical-bg); color: var(--critical);       border: 1px solid var(--critical-bdr); }}
-
-    /* ── Filter / visibility ────────────────────── */
-    .finding-row.hidden       {{ display: none; }}
-    .section-card.section-hidden {{ display: none; }}
-
-    /* ── Footer ─────────────────────────────────── */
     footer {{
-      margin-top: 52px; padding-top: 20px;
-      border-top: 1px solid var(--border2);
-      font-size: 12px; color: var(--muted);
-      display: flex; justify-content: space-between; align-items: center;
-      flex-wrap: wrap; gap: 8px; font-family: var(--mono);
+      margin-top:60px; padding-top:22px; border-top:1px solid var(--br);
+      display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
+      font-family:var(--mono); font-size:11px; color:var(--mu);
     }}
 
-    /* ── Responsive ─────────────────────────────── */
+    @keyframes gridMove {{
+      from {{ background-position:0 0; }}
+      to {{ background-position:48px 48px; }}
+    }}
+    @keyframes critPulse {{
+      0%,100% {{ box-shadow:0 0 0 0 color-mix(in srgb, var(--critical) 65%, transparent); opacity:1; }}
+      50% {{ box-shadow:0 0 0 6px transparent; opacity:.7; }}
+    }}
+    @keyframes slowFloat {{
+      0%,100% {{ transform:translateY(0px) rotate(0deg); }}
+      50% {{ transform:translateY(-12px) rotate(2deg); }}
+    }}
+
+    @media (max-width: 960px) {{
+      .hero-shell {{ grid-template-columns:1fr; }}
+      .i-grid {{ grid-template-columns:repeat(2,1fr); }}
+      .det-row {{ grid-template-columns:160px 1fr 62px 78px; gap:10px; }}
+      .hero-side {{ min-height:300px; }}
+      .fc-det,.fc-rows {{ padding-left:20px; }}
+    }}
     @media (max-width: 640px) {{
-      .hero {{ grid-template-columns: 1fr; }}
-      .stats-row {{ grid-template-columns: 1fr 1fr; }}
-      .filter-group {{ margin-left: 0; }}
-      .container {{ padding: 28px 16px 64px; }}
-      .sticky-bar {{ padding: 9px 16px; }}
+      .nav-in {{ padding:0 16px; }}
+      .n-pills {{ display:none; }}
+      .hero-shell,.container {{ padding-left:20px; padding-right:20px; }}
+      .i-grid {{ grid-template-columns:1fr 1fr; }}
+      .det-row {{ grid-template-columns:1fr; }}
+      .fc-top {{ padding-bottom:10px; }}
+      .fc-det,.fc-rows {{ padding-left:20px; }}
+      .n-filters {{ margin-left:0; }}
+    }}
+    @media (prefers-reduced-motion: reduce) {{
+      *,*::before,*::after {{ animation-duration:.01ms !important; transition-duration:.01ms !important; }}
     }}
   </style>
 </head>
 <body>
-  <div class="sticky-bar">
-    <span class="sticky-brand">django-arch-check</span>
-    <div class="sticky-divider"></div>
-    <div class="sticky-score-group">
-      <span class="sticky-score-num">{sc}</span>
-      <span class="sticky-score-denom">/ 100</span>
-      <span class="sticky-grade">{_e(grade)}</span>
+  <nav class="nav">
+    <div class="nav-in">
+      <span class="n-brand"><span class="n-ico">◈</span>django-arch-check</span>
+      <div class="n-div"></div>
+      <div class="n-score">
+        <span class="n-num">{score}</span>
+        <span class="n-sep">/ 100</span>
+        <span class="n-grade">{_e(grade)}</span>
+      </div>
+      <div class="n-pills">
+        <span class="pill p-cr">{total_criticals} critical</span>
+        <span class="pill p-wa">{total_warnings} warning</span>
+      </div>
+      <div class="n-filters">
+        <button class="f-btn active" type="button" onclick="setFilter('all', this)">All</button>
+        <button class="f-btn" type="button" onclick="setFilter('critical', this)">Critical</button>
+        <button class="f-btn" type="button" onclick="setFilter('warning', this)">Warning</button>
+      </div>
     </div>
-    <div class="sticky-pills">
-      <span class="sticky-pill critical">{total_criticals} critical</span>
-      <span class="sticky-pill warning">{total_warnings} warning</span>
-    </div>
-    <div class="filter-group">
-      <button class="filter-btn active" data-filter="all"      onclick="setFilter('all',this)">All</button>
-      <button class="filter-btn f-critical" data-filter="critical" onclick="setFilter('critical',this)">Critical</button>
-      <button class="filter-btn f-warning"  data-filter="warning"  onclick="setFilter('warning',this)">Warning</button>
-    </div>
-  </div>
+  </nav>
 
-  <div class="container">
-    <header class="hero">
-      <div>
-        <div class="hero-eyebrow">Architecture Report</div>
-        <h1 class="hero-title">django-arch-check <span class="dim">/ {_e(proj_name)}</span></h1>
-        <div class="hero-meta">
-          <div class="meta-item">Project <code>{_e(project_path)}</code></div>
-          <div class="meta-item">Generated {generated}</div>
-          <div class="meta-item">v{_e(__version__)}</div>
+  <section class="hero">
+    <div class="hero-shell">
+      <div class="h-content">
+        <div class="h-eye">Architecture Intelligence Report · django-arch-check v{_e(__version__)}</div>
+        <div class="h-score">
+          <span class="h-num">{score}</span>
+          <div class="h-meta">
+            <span class="h-denom">/ 100</span>
+            <span class="h-grade">{_e(grade)}</span>
+          </div>
+        </div>
+        <div class="h-title">Architecture Report for <span style="color:{color}">{_e(project_name)}</span></div>
+        <div class="h-sub">
+          Weighted architectural health scoring across {len(_SECTIONS)} detectors.
+          {total_findings} total finding(s), normalized by codebase size and detector risk.
+        </div>
+        <div class="h-badge {status_class}"><span class="h-dot"></span>{_e(status_text)}</div>
+        <div class="h-inds">{insights_html}</div>
+        <div class="h-foot">
+          Project <code class="h-code">{_e(project_path)}</code>
+          <span>·</span>
+          <span>Generated {generated}</span>
         </div>
       </div>
-      <div class="score-ring-wrap">
-        <svg width="96" height="96" viewBox="0 0 96 96" aria-label="Health score {sc} out of 100">
-          <circle cx="48" cy="48" r="38" fill="none" stroke="oklch(23% 0.011 240)" stroke-width="7"/>
-          <circle cx="48" cy="48" r="38" fill="none" stroke-width="7"
-            stroke-dasharray="238.76" stroke-dashoffset="{arc_offset}"
-            stroke-linecap="round" transform="rotate(-90 48 48)" class="score-arc"/>
-          <text x="48" y="44" text-anchor="middle" dominant-baseline="central"
-            font-size="20" font-weight="800" fill="oklch(93% 0.005 240)"
-            font-family="-apple-system,BlinkMacSystemFont,system-ui,sans-serif">{sc}</text>
-          <text x="48" y="64" text-anchor="middle" dominant-baseline="central"
-            font-size="13" font-weight="700"
-            fill="{color}"
-            font-family="-apple-system,BlinkMacSystemFont,system-ui,sans-serif">{_e(grade)}</text>
-        </svg>
-        <span class="score-ring-grade">{_e(grade)} · {_e(label)}</span>
-        <span class="score-ring-label">Health Score</span>
-      </div>
-    </header>
-
-    <div class="stats-row">
-      <div class="stat-card grade">
-        <div class="stat-num">{_e(grade)}</div>
-        <div class="stat-label">{_e(label)}</div>
-      </div>
-      <div class="stat-card critical">
-        <div class="stat-num">{total_criticals}</div>
-        <div class="stat-label">Critical</div>
-      </div>
-      <div class="stat-card warning">
-        <div class="stat-num">{total_warnings}</div>
-        <div class="stat-label">Warnings</div>
-      </div>
-      <div class="stat-card clean">
-        <div class="stat-num">{clean_sections}</div>
-        <div class="stat-label">Sections Clean</div>
+      <div class="hero-side" aria-hidden="true">
+        <div class="hero-orbit">
+          <div class="orbit-score">
+            <div>
+              <strong>{score}</strong>
+              <span>Health Score</span>
+              <em>{_e(grade)} · {_e(label)}</em>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
+  </section>
+
+  <main class="container">
+    <section class="s-wrap" data-reveal>
+      <div class="i-grid">
+        <div class="ic g-cr"><div class="ic-num">{_e(grade)}</div><div class="ic-lbl">Health Grade</div><div class="ic-sub">Score {score} / 100</div></div>
+        <div class="ic g-cr"><div class="ic-num">{total_criticals}</div><div class="ic-lbl">Critical</div><div class="ic-sub">Architecture violations</div></div>
+        <div class="ic g-wa"><div class="ic-num">{total_warnings}</div><div class="ic-lbl">Warnings</div><div class="ic-sub">Requiring attention</div></div>
+        <div class="ic g-ok"><div class="ic-num">{clean_sections}</div><div class="ic-lbl">Clean</div><div class="ic-sub">Detectors currently clean</div></div>
+      </div>
+    </section>
 
     {breakdown_html}
 
-    {sections_html}
+    <section class="s-wrap" data-reveal>
+      <div class="s-eye">Intelligence Report</div>
+      <div class="s-title">Architecture Findings</div>
+      <div id="findings-root">{groups_html}</div>
+    </section>
+
+    {detector_status_html}
 
     <footer>
       <span>Score = 100 − density_penalty − absolute_penalty · weighted by detector risk</span>
       <span>django-arch-check v{_e(__version__)}</span>
     </footer>
-  </div>
+  </main>
 
   <script>
+    function toggleGroup(id, btn) {{
+      const body = document.getElementById(id);
+      if (!body) return;
+      body.classList.toggle('collapsed');
+      btn.classList.toggle('collapsed');
+    }}
+
+    function toggleCard(id, btn) {{
+      const body = document.getElementById(id);
+      if (!body) return;
+      body.classList.toggle('open');
+      btn.classList.toggle('open');
+    }}
+
     function setFilter(type, btn) {{
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('[data-section]').forEach(section => {{
-        const rows = section.querySelectorAll('.finding-row');
-        if (!rows.length) return;
+      document.querySelectorAll('.f-btn').forEach(el => el.classList.toggle('active', el === btn));
+      document.querySelectorAll('.fg').forEach(group => {{
+        const cards = group.querySelectorAll('.fc');
+        if (!cards.length) {{
+          group.classList.toggle('group-hidden', type !== 'all');
+          return;
+        }}
         let visible = 0;
-        rows.forEach(row => {{
-          const match = type === 'all' || row.dataset.severity === type;
-          row.classList.toggle('hidden', !match);
+        cards.forEach(card => {{
+          const match = type === 'all' || card.dataset.severity === type;
+          card.classList.toggle('fc-hidden', !match);
           if (match) visible++;
         }});
-        section.classList.toggle('section-hidden', visible === 0);
+        group.classList.toggle('group-hidden', visible === 0);
       }});
     }}
+
+    const observer = new IntersectionObserver((entries) => {{
+      entries.forEach((entry) => {{
+        if (entry.isIntersecting) {{
+          entry.target.classList.add('revealed');
+        }}
+      }});
+    }}, {{ threshold: 0.12 }});
+
+    document.querySelectorAll('[data-reveal]').forEach((el) => observer.observe(el));
   </script>
 </body>
 </html>"""
