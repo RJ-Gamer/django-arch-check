@@ -14,6 +14,7 @@ from django_arch_check.analyzer import (
 )
 from django_arch_check.report import compute_score, generate_html
 from django_arch_check.serializers import generate_json, generate_sarif
+from django_arch_check.report import compute_score, generate_html, score_grade, score_label
 
 # ---------------------------------------------------------------------------
 # Severity styling
@@ -302,17 +303,16 @@ def _print_migration_safety(result: AnalysisResult) -> None:
     )
 
 def _write_html_report(result: AnalysisResult, project_path: str) -> None:
-    """Generate arch-report.html and write it to the project root."""
     import os
-
     html_content = generate_html(result, project_path)
     out_path = os.path.join(project_path, "arch-report.html")
     with open(out_path, "w", encoding="utf-8") as fh:
         fh.write(html_content)
-    score = compute_score(result)
-    click.echo(click.style(f"  Health score: {score}/100", bold=True))
+    sc = compute_score(result, project_path)
+    grade = score_grade(sc)
+    label = score_label(sc)
+    click.echo(click.style(f"  Health score: {sc}/100  {grade} · {label}", bold=True))
     click.echo(click.style(f"  Report saved: {out_path}", fg="cyan"))
-
 
 def _has_critical_findings(result: AnalysisResult) -> bool:
     """Return True if any detector emitted a critical finding."""

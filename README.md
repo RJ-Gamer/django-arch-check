@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.6.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.7.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-8-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-211%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-213%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -112,7 +112,7 @@ django-arch-check analyze \
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: django-arch-check
 ```
@@ -124,7 +124,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -368,26 +368,48 @@ The generated `arch-report.html` is self-contained and works offline.
 
 It includes:
 
-- A health score from `0` to `100`
+- A weighted, size-aware health score from `0` to `100`
+- A letter grade from `A` to `F` with a plain-language label
 - Summary counts for critical and warning findings
+- A per-detector score breakdown table
 - One section per detector
+- Sticky severity filters for critical-only and warning-only views
 - Skipped detector notes when `--ignore` is used
+
+When you generate HTML from the CLI, it also prints the score, grade, and label in the terminal before showing the saved report path.
 
 ### Health Score
 
-The score is rate-based, not a simple fixed deduction per finding.
+The score is weighted by detector risk and normalized by project size, so a critical circular import hurts more than a warning-level code smell, and the same finding counts more in a 5-file project than in a 500-file one.
 
 Formula:
 
 ```text
-critical_rate = criticals / total_findings
-warning_rate  = warnings  / total_findings
-raw           = 100 - (critical_rate * 60) - (warning_rate * 40)
-penalty       = min(30, criticals * 2 + warnings * 0.5)
-score         = max(0, round(raw - penalty))
+weighted_score     = sum of detector/severity weights
+normalized_density = weighted_score / ln(file_count + 1)
+density_penalty    = min(65, round(normalized_density * 8))
+absolute_penalty   = min(15, round(weighted_score * 0.08))
+score              = max(0, 100 - density_penalty - absolute_penalty)
 ```
 
-This avoids driving large mature projects straight to zero while still rewarding lower-severity, lower-density finding profiles.
+Default detector weights:
+
+- `circular_imports` critical = `10`
+- `celery_tasks` critical = `8`, warning = `3`
+- `migration_safety` warning = `6`
+- `missing_service_layer` critical = `4`, warning = `2`
+- `n_plus_one` warning = `3`
+- `direct_sql` warning = `2`
+- `god_apps` critical = `3`, warning = `1.5`
+- `fat_models` critical = `2`, warning = `1`
+
+Grades:
+
+- `A` (`90-100`) = Excellent
+- `B` (`75-89`) = Good
+- `C` (`60-74`) = Needs Work
+- `D` (`40-59`) = Poor
+- `F` (`0-39`) = Critical
 
 ---
 
@@ -411,6 +433,8 @@ It includes:
 - Health score and severity summary
 - Per-detector findings, skip state, and normalized messages
 
+The JSON summary uses the same project-aware health score calculation as the HTML report.
+
 ### SARIF
 
 SARIF output follows SARIF `2.1.0`, the standard format consumed by:
@@ -420,6 +444,8 @@ SARIF output follows SARIF `2.1.0`, the standard format consumed by:
 - CI systems and security dashboards that ingest SARIF
 
 Each result includes the detector rule id, severity level, message, and source location when one is available.
+
+Both JSON and SARIF are emitted as ASCII-safe JSON so shell redirection works reliably on Windows cp1252 terminals.
 
 ---
 
@@ -577,7 +603,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The next release version for this change set is `0.6.0`.
+The current release version is `0.7.0`.
 
 ---
 

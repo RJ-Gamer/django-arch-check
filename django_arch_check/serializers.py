@@ -87,7 +87,7 @@ def generate_json(result: AnalysisResult, project_path: str) -> str:
         "project_path": project_path,
         "generated_at": _generated_at(),
         "summary": {
-            "health_score": compute_score(result),
+            "health_score": compute_score(result, project_path),
             "critical_count": critical_count,
             "warning_count": warning_count,
             "total_findings": critical_count + warning_count,

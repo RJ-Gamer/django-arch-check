@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-arch-check"
-version = "0.6.0"
+version = "0.7.0"
 description = "A CLI tool to detect architectural problems in Django projects."
 readme = "README.md"
 requires-python = ">=3.11"

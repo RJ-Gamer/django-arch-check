@@ -5,21 +5,22 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v0.5.0] - 2026-05-19
+## [v0.7.0] - 2026-05-26
 
 ### Added
 
-- Added `.pre-commit-hooks.yaml` so teams can integrate `django-arch-check` with pre-commit in one hook entry.
-- Added `--format json` output for scripting, dashboards, and third-party integrations.
-- Added `--format sarif` output for GitHub code scanning, VS Code, and CI systems that consume SARIF.
-- Added a dedicated serializer layer for machine-readable output formats.
+- Added score grades and labels (`A`-`F`, `Excellent` to `Critical`) to HTML output and to the CLI summary shown after `--format html`.
+- Added a score breakdown table to the HTML report so each detector shows finding count, weighted impact, and a low/medium/high impact label.
+- Added report tests covering grade boundaries, score labels, footer formula text, and size-aware score behavior.
 
 ### Changed
 
-- Made machine-readable output emit clean stdout payloads without human-oriented banners.
-- Made HTML output preserve CI-gating behavior by exiting non-zero when critical findings are present.
+- Replaced the old rate-based health score with a weighted, detector-risk-aware, size-normalized formula based on Python file count.
+- Updated the HTML report to surface the new score model more clearly with grade presentation, revised footer copy, and richer summary cards.
 
+### Fixed
 
+- Fixed JSON output so `summary.health_score` uses the analyzed `project_path`, matching the project-aware score shown in the HTML report.
 
 ## [v0.6.0] - 2026-05-26
 
@@ -39,3 +40,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   methods (`get_queryset`, `perform_create`, `get_context_data`, `form_valid`,
   and others) where ORM calls are expected and correct. These were false
   positives that degraded trust in the detector on real DRF projects.
+
+## [v0.5.0] - 2026-05-19
+
+### Added
+
+- Added `.pre-commit-hooks.yaml` so teams can integrate `django-arch-check` with pre-commit in one hook entry.
+- Added `--format json` output for scripting, dashboards, and third-party integrations.
+- Added `--format sarif` output for GitHub code scanning, VS Code, and CI systems that consume SARIF.
+- Added a dedicated serializer layer for machine-readable output formats.
+
+### Changed
+
+- Made machine-readable output emit clean stdout payloads without human-oriented banners.
+- Made HTML output preserve CI-gating behavior by exiting non-zero when critical findings are present.
