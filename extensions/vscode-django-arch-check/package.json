@@ -1,0 +1,97 @@
+{
+  "name": "vscode-django-arch-check",
+  "displayName": "Django Arch Check",
+  "description": "Open django-arch-check HTML reports as an interactive dashboard inside VS Code.",
+  "version": "0.0.1",
+  "publisher": "Rajatjog",
+  "license": "MIT",
+  "private": false,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "django",
+    "architecture",
+    "dashboard",
+    "python",
+    "quality"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RJ-Gamer/django-arch-check.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RJ-Gamer/django-arch-check/issues"
+  },
+  "homepage": "https://github.com/RJ-Gamer/django-arch-check",
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:djangoArchCheck.openDashboard",
+    "onCommand:djangoArchCheck.refreshDashboard",
+    "onCommand:djangoArchCheck.analyzeWorkspace"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "djangoArchCheck.openDashboard",
+        "title": "Django Arch Check: Open Dashboard",
+        "category": "Django Arch Check"
+      },
+      {
+        "command": "djangoArchCheck.refreshDashboard",
+        "title": "Django Arch Check: Refresh Dashboard",
+        "category": "Django Arch Check"
+      },
+      {
+        "command": "djangoArchCheck.analyzeWorkspace",
+        "title": "Django Arch Check: Analyze Workspace",
+        "category": "Django Arch Check"
+      }
+    ],
+    "configuration": {
+      "title": "Django Arch Check",
+      "properties": {
+        "djangoArchCheck.cliPath": {
+          "type": "string",
+          "default": "django-arch-check",
+          "description": "Path to the django-arch-check executable. Set this if VS Code cannot find your Python CLI install."
+        },
+        "djangoArchCheck.extraArgs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Extra CLI arguments passed before the workspace path, for example --ignore-path legacy/."
+        },
+        "djangoArchCheck.openDashboardOnAnalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open or refresh the dashboard automatically after Analyze Workspace finishes."
+        },
+        "djangoArchCheck.showOutputChannelOnError": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reveal the Django Arch Check output channel automatically when CLI execution fails."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package:vsix": "vsce package",
+    "publish:marketplace": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.2",
+    "typescript": "^5.6.2"
+  }
+}

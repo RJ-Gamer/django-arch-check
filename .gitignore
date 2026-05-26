@@ -34,6 +34,12 @@ htmlcov/
 .idea/
 *.swp
 *.swo
+!.vscode/
+!.vscode/launch.json
+!.vscode/tasks.json
+!extensions/vscode-django-arch-check/.vscode/
+!extensions/vscode-django-arch-check/.vscode/launch.json
+!extensions/vscode-django-arch-check/.vscode/tasks.json
 
 # OS
 .DS_Store
@@ -45,3 +51,9 @@ Thumbs.db
 AGENTS.md
 graphify-out/
 PRODUCT_ROADMAP.md
+
+# VS Code extension builds
+extensions/*/node_modules/
+extensions/*/out/
+extensions/*/.vscode-test/
+extensions/*/*.vsix

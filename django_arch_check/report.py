@@ -664,8 +664,46 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
       --accent:oklch(72% 0.20 202);
       --accent-bg:oklch(14% 0.07 202); --accent-b:oklch(26% 0.10 202);
       --impact-medium:oklch(70% 0.15 40);
+      --body-grad-1:oklch(18% 0.04 240 / 0.7);
+      --body-grad-2:oklch(16% 0.09 22 / 0.34);
+      --body-grad-3:#05070f;
+      --body-grad-4:#060913;
+      --grid-line:oklch(30% 0.02 240 / 0.14);
+      --scanline:rgba(2,4,10,.14);
+      --nav-bg:oklch(5% 0.02 240 / .84);
+      --hero-sub:#b1b9cf;
+      --orbit-border:rgba(255,255,255,.07);
+      --orbit-inner-border:rgba(255,255,255,.05);
+      --orbit-grid:rgba(255,255,255,.035);
+      --orbit-sheen:rgba(255,255,255,.03);
+      --card-shadow:0 30px 70px rgba(0,0,0,.35);
+      --card-shadow-soft:0 12px 36px rgba(0,0,0,.22);
       --mono:'JetBrains Mono','IBM Plex Mono',ui-monospace,monospace;
       --sans:'Aptos','Segoe UI',Tahoma,sans-serif;
+    }}
+
+    body[data-theme="light"] {{
+      --bg:#f3f6fb; --s1:#ffffff; --s2:#eef3fb; --s3:#e6edf7;
+      --fg:#0f1728; --mu:#66748f; --mu2:#4e5d79;
+      --br:#d5deeb; --br2:#c4d0e2;
+      --critical-bg:oklch(95% 0.03 22); --critical-b:oklch(78% 0.11 22);
+      --warning-bg:oklch(96% 0.03 52); --warning-b:oklch(82% 0.10 52);
+      --clean-bg:oklch(96% 0.03 162); --clean-b:oklch(78% 0.09 162);
+      --accent-bg:oklch(96% 0.03 202); --accent-b:oklch(77% 0.10 202);
+      --body-grad-1:oklch(94% 0.03 240 / 0.95);
+      --body-grad-2:oklch(95% 0.04 30 / 0.65);
+      --body-grad-3:#f3f6fb;
+      --body-grad-4:#fbfdff;
+      --grid-line:oklch(80% 0.02 240 / 0.55);
+      --scanline:rgba(130,150,180,.05);
+      --nav-bg:rgba(246,249,253,.86);
+      --hero-sub:#4c5d78;
+      --orbit-border:rgba(112,132,170,.16);
+      --orbit-inner-border:rgba(112,132,170,.12);
+      --orbit-grid:rgba(112,132,170,.10);
+      --orbit-sheen:rgba(255,255,255,.72);
+      --card-shadow:0 22px 48px rgba(63,86,124,.12);
+      --card-shadow-soft:0 10px 24px rgba(63,86,124,.10);
     }}
 
     *,*::before,*::after {{ box-sizing:border-box; margin:0; padding:0; }}
@@ -673,16 +711,16 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     body {{
       font-family:var(--sans); font-size:14px; line-height:1.6; color:var(--fg);
       background:
-        radial-gradient(circle at 15% 20%, oklch(18% 0.04 240 / 0.7), transparent 28%),
-        radial-gradient(circle at 82% 22%, oklch(16% 0.09 22 / 0.34), transparent 24%),
-        linear-gradient(180deg, #060913 0%, #05070f 100%);
+        radial-gradient(circle at 15% 20%, var(--body-grad-1), transparent 28%),
+        radial-gradient(circle at 82% 22%, var(--body-grad-2), transparent 24%),
+        linear-gradient(180deg, var(--body-grad-4) 0%, var(--body-grad-3) 100%);
       -webkit-font-smoothing:antialiased; overflow-x:hidden;
     }}
     body::before {{
       content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
       background-image:
-        linear-gradient(oklch(30% 0.02 240 / 0.14) 1px, transparent 1px),
-        linear-gradient(90deg, oklch(30% 0.02 240 / 0.14) 1px, transparent 1px);
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
       background-size:48px 48px;
       mask-image:linear-gradient(180deg, rgba(0,0,0,.4), rgba(0,0,0,.07));
       animation:gridMove 26s linear infinite;
@@ -693,8 +731,8 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
         0deg,
         transparent,
         transparent 2px,
-        rgba(2,4,10,.14) 2px,
-        rgba(2,4,10,.14) 4px
+        var(--scanline) 2px,
+        var(--scanline) 4px
       );
       opacity:.25;
     }}
@@ -704,7 +742,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
 
     .nav {{
       position:sticky; top:0; z-index:30; height:54px;
-      background:oklch(5% 0.02 240 / .84);
+      background:var(--nav-bg);
       backdrop-filter:blur(22px) saturate(1.5);
       border-bottom:1px solid var(--br);
     }}
@@ -739,6 +777,12 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
       margin-left:auto; display:flex; gap:2px; background:var(--s3);
       border-radius:8px; padding:3px; border:1px solid var(--br);
     }}
+    .theme-btn {{
+      font-family:var(--sans); font-size:11px; font-weight:700;
+      padding:4px 10px; border:1px solid var(--br); border-radius:8px; cursor:pointer;
+      background:var(--s1); color:var(--fg); letter-spacing:.04em; text-transform:uppercase;
+    }}
+    .theme-btn:hover {{ background:var(--s2); }}
     .f-btn {{
       font-family:var(--sans); font-size:11px; font-weight:600;
       padding:4px 12px; border:none; border-radius:6px; cursor:pointer;
@@ -776,7 +820,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
       line-height:1.02; margin-bottom:14px;
     }}
     .h-sub {{
-      max-width:62ch; font-size:15px; color:#b1b9cf; margin-bottom:22px;
+      max-width:62ch; font-size:15px; color:var(--hero-sub); margin-bottom:22px;
     }}
     .h-badge {{
       display:inline-flex; align-items:center; gap:10px; border-radius:6px;
@@ -828,20 +872,20 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     }}
     .hero-orbit {{
       position:absolute; inset:14% 8%;
-      border:1px solid rgba(255,255,255,.07); border-radius:32px;
+      border:1px solid var(--orbit-border); border-radius:32px;
       background:
-        linear-gradient(135deg, rgba(255,255,255,.03), transparent 38%),
+        linear-gradient(135deg, var(--orbit-sheen), transparent 38%),
         radial-gradient(circle at 65% 35%, color-mix(in srgb, {color} 12%, transparent), transparent 35%),
         var(--s1);
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 30px 70px rgba(0,0,0,.35);
+      box-shadow:inset 0 1px 0 var(--orbit-inner-border), var(--card-shadow);
       overflow:hidden;
     }}
     .hero-orbit::before {{
       content:''; position:absolute; inset:16px;
-      border:1px solid rgba(255,255,255,.05); border-radius:24px;
+      border:1px solid var(--orbit-inner-border); border-radius:24px;
       background-image:
-        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+        linear-gradient(var(--orbit-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--orbit-grid) 1px, transparent 1px);
       background-size:28px 28px;
       mask-image:radial-gradient(circle, black 52%, transparent 92%);
     }}
@@ -867,13 +911,14 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     .s-wrap {{ margin-bottom:64px; }}
     .s-eye {{ font-family:var(--mono); font-size:11px; color:var(--mu2); letter-spacing:.12em; text-transform:uppercase; margin-bottom:6px; }}
     .s-title {{ font-size:1.8rem; font-weight:800; letter-spacing:-.03em; margin-bottom:24px; }}
-    [data-reveal] {{ opacity:0; transform:translateY(18px); transition:opacity .6s ease, transform .6s ease; }}
+    [data-reveal] {{ opacity:1; transform:none; transition:opacity .6s ease, transform .6s ease; }}
+    body.js-enhanced [data-reveal]:not(.revealed) {{ opacity:0; transform:translateY(18px); }}
     [data-reveal].revealed {{ opacity:1; transform:none; }}
 
     .i-grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }}
     .ic {{
       background:var(--s1); border:1px solid var(--br); border-radius:14px;
-      padding:24px 22px; box-shadow:0 12px 36px rgba(0,0,0,.22);
+      padding:24px 22px; box-shadow:var(--card-shadow-soft);
     }}
     .ic.g-cr {{ border-color:var(--critical-b); }}
     .ic.g-wa {{ border-color:var(--warning-b); }}
@@ -1028,6 +1073,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     @media (max-width: 640px) {{
       .nav-in {{ padding:0 16px; }}
       .n-pills {{ display:none; }}
+      .theme-btn {{ order:3; }}
       .hero-shell,.container {{ padding-left:20px; padding-right:20px; }}
       .i-grid {{ grid-template-columns:1fr 1fr; }}
       .det-row {{ grid-template-columns:1fr; }}
@@ -1054,6 +1100,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
         <span class="pill p-cr">{total_criticals} critical</span>
         <span class="pill p-wa">{total_warnings} warning</span>
       </div>
+      <button class="theme-btn" id="theme-toggle" type="button" onclick="toggleTheme()" aria-label="Switch theme">Dark</button>
       <div class="n-filters">
         <button class="f-btn active" type="button" onclick="setFilter('all', this)">All</button>
         <button class="f-btn" type="button" onclick="setFilter('critical', this)">Critical</button>
@@ -1127,6 +1174,34 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
   </main>
 
   <script>
+    const THEME_KEY = 'django-arch-check-theme';
+
+    function applyTheme(theme) {{
+      const resolved = theme === 'light' ? 'light' : 'dark';
+      document.body.dataset.theme = resolved;
+      const btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      btn.textContent = resolved === 'light' ? 'Light' : 'Dark';
+      btn.setAttribute(
+        'aria-label',
+        resolved === 'light' ? 'Switch to dark theme' : 'Switch to light theme'
+      );
+      btn.setAttribute(
+        'title',
+        resolved === 'light' ? 'Switch to dark theme' : 'Switch to light theme'
+      );
+    }}
+
+    function toggleTheme() {{
+      const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      try {{
+        localStorage.setItem(THEME_KEY, next);
+      }} catch (error) {{
+        // Ignore storage failures in locked-down browsers.
+      }}
+    }}
+
     function toggleGroup(id, btn) {{
       const body = document.getElementById(id);
       if (!body) return;
@@ -1158,6 +1233,19 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
         group.classList.toggle('group-hidden', visible === 0);
       }});
     }}
+
+    try {{
+      applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+    }} catch (error) {{
+      applyTheme('dark');
+    }}
+
+    document.body.classList.add('js-enhanced');
+    document.querySelectorAll('[data-reveal]').forEach((el) => {{
+      if (el.getBoundingClientRect().top < window.innerHeight * 0.92) {{
+        el.classList.add('revealed');
+      }}
+    }});
 
     const observer = new IntersectionObserver((entries) => {{
       entries.forEach((entry) => {{

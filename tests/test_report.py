@@ -201,6 +201,11 @@ class TestGenerateHtml:
         html = self._html()
         assert __version__ in html
 
+    def test_theme_toggle_present(self) -> None:
+        html = self._html()
+        assert "theme-toggle" in html
+        assert "Switch to light theme" in html
+
     def test_score_formula_in_footer(self) -> None:
         html = self._html()
         assert "Score = 100" in html

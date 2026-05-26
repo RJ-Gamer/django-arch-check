@@ -5,6 +5,19 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.1] - 2026-05-26
+
+### Added
+
+- Added dark/light theme toggle to the HTML report with `localStorage` persistence so the chosen theme survives page reloads.
+- Added full CSS variable layer for theming — all colors, gradients, shadows, and grid lines resolve through CSS custom properties so both themes share a single stylesheet.
+
+### Changed
+
+- Refactored HTML report CSS to use CSS variables (`--body-grad-*`, `--grid-line`, `--scanline`, `--nav-bg`, `--hero-sub`, `--orbit-*`, `--card-shadow`) instead of hardcoded `oklch`/`rgba` literals, making the light theme override clean and maintainable.
+
+---
+
 ## [v0.7.0] - 2026-05-26
 
 ### Added

@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.7.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.7.2-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-8-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-213%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-214%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -375,6 +375,7 @@ It includes:
 - One section per detector
 - Sticky severity filters for critical-only and warning-only views
 - Skipped detector notes when `--ignore` is used
+- Dark and light theme toggle with `localStorage` persistence
 
 When you generate HTML from the CLI, it also prints the score, grade, and label in the terminal before showing the saved report path.
 
@@ -603,7 +604,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `0.7.0`.
+The current release version is `0.7.1`.
 
 ---
 

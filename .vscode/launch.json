@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Django Arch Check Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode-django-arch-check"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/extensions/vscode-django-arch-check/out/**/*.js"
+      ],
+      "preLaunchTask": "compile-vscode-extension"
+    }
+  ]
+}

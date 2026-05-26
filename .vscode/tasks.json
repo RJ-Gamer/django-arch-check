@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "compile-vscode-extension",
+      "type": "shell",
+      "command": "npm run compile",
+      "options": {
+        "cwd": "${workspaceFolder}/extensions/vscode-django-arch-check"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$tsc"
+      ],
+      "detail": "Compile the Django Arch Check VS Code extension."
+    }
+  ]
+}
