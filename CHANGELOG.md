@@ -5,6 +5,20 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.0] - 2026-06-05
+
+### Added
+
+- Added `n1_serializer_risk`, a new detector focused on DRF serializer and viewset N+1 patterns. It flags ORM work inside `SerializerMethodField` getters, nested serializers without paired `prefetch_related`/`select_related`, serializer `source=` fields bound to ORM-backed model `@property` methods, and bare viewset querysets paired with relational serializers.
+- Added code-snippet payloads for `n1_serializer_risk` findings, including line ranges and preserved source lines for HTML, JSON, and SARIF consumers.
+- Added an accordion-style HTML report rendering path for findings that carry `code_snippet` context.
+- Added detector, analyzer, report, CLI, and machine-output test coverage for the serializer-risk workflow.
+
+### Changed
+
+- Updated the detector registry, score model, HTML sections, JSON output, and SARIF rule set to include `n1_serializer_risk`.
+- Report severity summaries now treat detector-level `error` findings as critical for aggregate counts and badges.
+
 ## [v0.7.1] - 2026-05-26
 
 ### Added

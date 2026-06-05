@@ -6,6 +6,7 @@ from django_arch_check.analyzer import AnalysisResult
 from django_arch_check.detectors.circular_imports import CircularImportFinding
 from django_arch_check.detectors.direct_sql import DirectSQLFinding
 from django_arch_check.detectors.fat_models import FatModelFinding
+from django_arch_check.detectors.n1_serializer_risk import N1SerializerFinding
 from django_arch_check.report import compute_score, generate_html
 
 # ---------------------------------------------------------------------------
@@ -28,6 +29,25 @@ def _critical_circular() -> CircularImportFinding:
     return CircularImportFinding(
         cycle_display="a.models → b.models → a.models",
         severity="critical",
+    )
+
+
+def _serializer_risk_error() -> N1SerializerFinding:
+    return N1SerializerFinding(
+        detector="N1SerializerRisk",
+        severity="error",
+        file="app/serializers.py",
+        line=24,
+        message="ORM call inside SerializerMethodField: get_likes_count in ResourceSerializer",
+        code_snippet={
+            "start_line": 22,
+            "end_line": 24,
+            "lines": [
+                "    def get_likes_count(self, obj):",
+                "        likes = obj.likes.all()",
+                "        return likes.count()",
+            ],
+        },
     )
 
 def _empty_result() -> AnalysisResult:
@@ -134,6 +154,7 @@ class TestGenerateHtml:
             "Fat Models", "God Apps", "Circular Imports",
             "Missing Service Layer", "Celery Tasks Without Retry",
             "Direct SQL", "N+1 Query Risks", "Migration Safety",
+            "N+1 Serializer Risk",
         ]:
             assert title in html, f"Section title missing: {title!r}"
 
@@ -195,6 +216,14 @@ class TestGenerateHtml:
         result = AnalysisResult(fat_models=[_warning_fat_model()])
         html = generate_html(result, "/project")
         assert "badge-warning" in html
+
+    def test_serializer_risk_renders_accordion(self) -> None:
+        result = AnalysisResult(n1_serializer_risk=[_serializer_risk_error()])
+        html = generate_html(result, "/project")
+        assert 'details class="issue-accordion"' in html
+        assert "language-python" in html
+        assert "get_likes_count" in html
+        assert "1 critical" in html
 
     def test_version_present(self) -> None:
         from django_arch_check import __version__

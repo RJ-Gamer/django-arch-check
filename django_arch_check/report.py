@@ -59,6 +59,8 @@ _DETECTOR_WEIGHTS: dict[str, dict[str, float]] = {
     "direct_sql": {"warning": 2.0},
     "god_apps": {"critical": 3.0, "warning": 1.5},
     "fat_models": {"critical": 2.0, "warning": 1.0},
+    # TODO: Tune n1_serializer_risk weight after confirming detector in production.
+    "n1_serializer_risk": {"error": 3.0, "warning": 1.5},
 }
 
 # ---------------------------------------------------------------------------
@@ -74,6 +76,7 @@ _SECTIONS: list[tuple[str, str]] = [
     ("direct_sql", "Direct SQL"),
     ("n_plus_one", "N+1 Query Risks"),
     ("migration_safety", "Migration Safety"),
+    ("n1_serializer_risk", "N+1 Serializer Risk"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -107,6 +110,39 @@ _SKIP_DIRS: frozenset[str] = frozenset(
         ".eggs",
     }
 )
+
+
+_ACCORDION_CSS: str = """
+    /* ── N+1 Serializer Risk accordion cards ───────────────────────── */
+    .issue-accordion { display:block; width:100%; }
+    .issue-summary {
+      display:flex; align-items:center; gap:10px; cursor:pointer;
+      padding:13px 20px; background:transparent; border:none; width:100%;
+      list-style:none; user-select:none; flex-wrap:wrap;
+    }
+    .issue-summary::-webkit-details-marker { display:none; }
+    .issue-accordion[open] .issue-summary { border-bottom:1px solid var(--br); }
+    .issue-sev {
+      font-family:var(--mono); font-size:10px; font-weight:700;
+      padding:2px 7px; border-radius:4px; text-transform:uppercase; flex-shrink:0;
+      letter-spacing:.04em;
+    }
+    .severity-critical { background:var(--critical-bg); color:var(--critical); border:1px solid var(--critical-b); }
+    .severity-error    { background:var(--critical-bg); color:var(--critical); border:1px solid var(--critical-b); }
+    .severity-warning  { background:var(--warning-bg);  color:var(--warning);  border:1px solid var(--warning-b); }
+    .issue-msg { flex:1; font-size:13px; font-family:var(--mono); word-break:break-word; }
+    .issue-loc { font-family:var(--mono); font-size:11px; color:var(--mu); flex-shrink:0; }
+    .issue-detail {
+      padding:12px 20px 16px;
+      background:var(--s1); border-top:1px solid var(--br2);
+    }
+    .issue-file-path { font-family:var(--mono); font-size:11px; color:var(--mu); margin-bottom:8px; }
+    .code-block {
+      background:var(--s3); border:1px solid var(--br); border-radius:6px;
+      padding:10px 14px; overflow-x:auto; margin:0;
+    }
+    .code-block code { font-family:var(--mono); font-size:12px; color:var(--fg); white-space:pre; }
+"""
 
 
 def _count_python_files(project_path: str) -> int:
@@ -216,7 +252,8 @@ def _all_findings(result: AnalysisResult) -> list[list[object]]:
 
 def _count_severities(findings: list[object]) -> tuple[int, int]:
     critical = sum(
-        1 for finding in findings if getattr(finding, "severity", "") == "critical"
+        1 for finding in findings
+        if getattr(finding, "severity", "") in ("critical", "error")
     )
     warning = sum(
         1 for finding in findings if getattr(finding, "severity", "") == "warning"
@@ -281,6 +318,8 @@ def _hero_insights(result: AnalysisResult) -> list[tuple[str, str]]:
             text = f"Query inefficiency risk — {len(findings)} N+1 signal(s)"
         elif detector_id == "celery_tasks":
             text = f"Task reliability gap — {len(findings)} task(s) missing retry"
+        elif detector_id == "n1_serializer_risk":
+            text = f"Serializer N+1 risk — {len(findings)} pattern(s) detected"
         else:
             text = f"{title} — {len(findings)} finding(s)"
 
@@ -323,12 +362,17 @@ def _detector_badges(findings: list[object]) -> str:
 def _finding_path(finding: object) -> str:
     if hasattr(finding, "file_path"):
         return str(getattr(finding, "file_path"))
+    if hasattr(finding, "file"):
+        return str(getattr(finding, "file"))
     if hasattr(finding, "app_path"):
         return str(getattr(finding, "app_path"))
     return "project"
 
 
 def _finding_title(finding: object) -> str:
+    if hasattr(finding, "detector") and getattr(finding, "detector") == "N1SerializerRisk":
+        msg = str(getattr(finding, "message", ""))
+        return _e(msg[:80] + "…" if len(msg) > 80 else msg)
     if hasattr(finding, "class_name"):
         return f"{_e(getattr(finding, 'class_name'))}"
     if hasattr(finding, "view_name"):
@@ -352,6 +396,9 @@ def _finding_title(finding: object) -> str:
 
 def _finding_summary(finding: object) -> str:
     severity = str(getattr(finding, "severity", "warning"))
+
+    if hasattr(finding, "detector") and getattr(finding, "detector") == "N1SerializerRisk":
+        return f"line {_e(str(getattr(finding, 'line', '?')))}"
 
     if hasattr(finding, "class_name") and hasattr(finding, "method_count"):
         return f"{getattr(finding, 'method_count')} methods"
@@ -405,6 +452,12 @@ def _finding_rows(finding: object, detector_title: str) -> list[tuple[str, str]]
         ("Severity", _e(str(getattr(finding, "severity", "warning")).upper())),
     ]
 
+    if hasattr(finding, "detector") and getattr(finding, "detector") == "N1SerializerRisk":
+        rows.append(("File", _e(str(getattr(finding, "file", "")))))
+        rows.append(("Line", _e(str(getattr(finding, "line", "")))))
+        rows.append(("Issue", _e(str(getattr(finding, "message", "")))))
+        return rows
+
     if hasattr(finding, "class_name") and hasattr(finding, "method_count"):
         rows.append(("Methods", _e(getattr(finding, "method_count"))))
 
@@ -441,9 +494,54 @@ def _finding_rows(finding: object, detector_title: str) -> list[tuple[str, str]]
     return rows
 
 
-def _render_finding_card(finding: object, detector_title: str, index: int) -> str:
+def _render_accordion_card(finding: object, detector_title: str, index: int) -> str:
+    """Render a finding that carries a code_snippet as an HTML <details> accordion."""
     severity = str(getattr(finding, "severity", "warning"))
-    severity_class = "sv-cr" if severity == "critical" else "sv-wa"
+    # Map "error" to "critical" for filter compatibility
+    display_severity = "critical" if severity in ("critical", "error") else severity
+    sev_css = f"severity-{severity}"
+
+    message = _e(str(getattr(finding, "message", "")))
+    file_path = _e(_finding_path(finding))
+    line = _e(str(getattr(finding, "line", getattr(finding, "line_number", ""))))
+
+    snippet: dict = getattr(finding, "code_snippet", {})
+    start_line = snippet.get("start_line", "")
+    end_line = snippet.get("end_line", "")
+    lines: list[str] = snippet.get("lines", [])
+    code_text = _e("\n".join(lines))
+
+    if start_line and end_line and start_line != end_line:
+        line_range = f"lines {start_line}–{end_line}"
+    elif start_line:
+        line_range = f"line {start_line}"
+    else:
+        line_range = ""
+
+    return (
+        f'<article class="fc" data-severity="{_e(display_severity)}">'
+        f'<details class="issue-accordion">'
+        f'<summary class="issue-summary">'
+        f'<span class="issue-sev {sev_css}">{_e(severity.upper())}</span>'
+        f'<span class="issue-msg">{message}</span>'
+        f'<span class="issue-loc">{file_path}:{line}</span>'
+        f'</summary>'
+        f'<div class="issue-detail">'
+        f'<div class="issue-file-path">{file_path} {_e(line_range)}</div>'
+        f'<pre class="code-block"><code class="language-python">{code_text}</code></pre>'
+        f'</div>'
+        f'</details>'
+        f'</article>'
+    )
+
+
+def _render_finding_card(finding: object, detector_title: str, index: int) -> str:
+    if hasattr(finding, "code_snippet"):
+        return _render_accordion_card(finding, detector_title, index)
+
+    severity = str(getattr(finding, "severity", "warning"))
+    severity_class = "sv-cr" if severity in ("critical", "error") else "sv-wa"
+    display_severity = "critical" if severity in ("critical", "error") else severity
     path = _e(_finding_path(finding))
     title = _finding_title(finding)
     summary = _finding_summary(finding)
@@ -459,7 +557,7 @@ def _render_finding_card(finding: object, detector_title: str, index: int) -> st
     )
 
     return (
-        f'<article class="fc" data-severity="{_e(severity)}">'
+        f'<article class="fc" data-severity="{_e(display_severity)}">'
         f'<button class="fc-top" type="button" onclick="toggleCard(\'card-{index}\', this)">'
         f'<span class="sv {severity_class}">{_e(severity.upper())}</span>'
         f'<code class="fc-path">{path}</code>'
@@ -609,7 +707,10 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
         for attr, _ in _SECTIONS
     )
     total_criticals = sum(
-        sum(1 for finding in getattr(result, attr) if getattr(finding, "severity", "") == "critical")
+        sum(
+            1 for finding in getattr(result, attr)
+            if getattr(finding, "severity", "") in ("critical", "error")
+        )
         for attr, _ in _SECTIONS
     )
     clean_sections = sum(
@@ -1084,6 +1185,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     @media (prefers-reduced-motion: reduce) {{
       *,*::before,*::after {{ animation-duration:.01ms !important; transition-duration:.01ms !important; }}
     }}
+    {_ACCORDION_CSS}
   </style>
 </head>
 <body>

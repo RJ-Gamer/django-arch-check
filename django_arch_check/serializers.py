@@ -72,6 +72,14 @@ _DETECTORS: Final[tuple[tuple[str, str, str, str], ...]] = (
         "RunPython without atomic=False, and RunSQL. Each finding is an advisory — not an "
         "error — and includes the risk, when it is safe to ignore, and a safer alternative.",
     ),
+    (
+        "n1_serializer_risk",
+        "N+1 Serializer Risk",
+        "Possible N+1 ORM access patterns in DRF serializers and viewsets.",
+        "Flags SerializerMethodField ORM calls, nested serializers without matching "
+        "prefetch/select coverage, serializer source= values that hit ORM-backed model "
+        "@property methods, and bare viewset querysets paired with relational serializers.",
+    ),
 )
 
 
@@ -233,7 +241,10 @@ def _summary_counts(result: AnalysisResult) -> tuple[int, int]:
 
 
 def _count_by_severity(findings: list[object]) -> tuple[int, int]:
-    critical = sum(1 for finding in findings if getattr(finding, "severity", "") == "critical")
+    critical = sum(
+        1 for finding in findings
+        if getattr(finding, "severity", "") in ("critical", "error")
+    )
     warning = sum(1 for finding in findings if getattr(finding, "severity", "") == "warning")
     return critical, warning
 
@@ -256,11 +267,14 @@ def _srcroot_uri(project_path: str) -> str | None:
 
 
 def _sarif_level(severity: str) -> str:
-    return "error" if severity == "critical" else "warning"
+    return "error" if severity in ("critical", "error") else "warning"
 
 
 def _finding_message(finding: object) -> str:
     severity = str(getattr(finding, "severity", "warning"))
+
+    if hasattr(finding, "detector") and getattr(finding, "detector") == "N1SerializerRisk":
+        return str(getattr(finding, "message", finding))
 
     if hasattr(finding, "class_name") and hasattr(finding, "method_count"):
         return (
@@ -338,6 +352,8 @@ def _finding_location(finding: object) -> dict[str, int | str] | None:
     path: str | None = None
     if hasattr(finding, "file_path"):
         path = str(getattr(finding, "file_path"))
+    elif hasattr(finding, "file"):
+        path = str(getattr(finding, "file"))
     elif hasattr(finding, "app_path"):
         path = str(getattr(finding, "app_path")).rstrip("/\\")
 
@@ -347,4 +363,6 @@ def _finding_location(finding: object) -> dict[str, int | str] | None:
     location: dict[str, int | str] = {"path": path.replace("\\", "/")}
     if hasattr(finding, "line_number"):
         location["line"] = int(getattr(finding, "line_number"))
+    elif hasattr(finding, "line"):
+        location["line"] = int(getattr(finding, "line"))
     return location

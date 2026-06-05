@@ -27,6 +27,7 @@ from django_arch_check.detectors import (
     missing_service_layer,
     n_plus_one,
     migration_safety,
+    n1_serializer_risk,
 )
 from django_arch_check.detectors.celery_tasks import CeleryTaskFinding
 from django_arch_check.detectors.circular_imports import CircularImportFinding
@@ -35,8 +36,8 @@ from django_arch_check.detectors.fat_models import FatModelFinding
 from django_arch_check.detectors.god_apps import GodAppFinding
 from django_arch_check.detectors.missing_service_layer import MissingServiceLayerFinding
 from django_arch_check.detectors.n_plus_one import NPlusOneFinding
-
-from django_arch_check.detectors.migration_safety import MigrationSafetyFinding 
+from django_arch_check.detectors.migration_safety import MigrationSafetyFinding
+from django_arch_check.detectors.n1_serializer_risk import N1SerializerFinding
 
 VALID_DETECTORS: Final[tuple[str, ...]] = (
     "fat_models",
@@ -47,6 +48,7 @@ VALID_DETECTORS: Final[tuple[str, ...]] = (
     "direct_sql",
     "n_plus_one",
     "migration_safety",
+    "n1_serializer_risk",
 )
 
 
@@ -72,7 +74,8 @@ class AnalysisResult:
     celery_tasks: list[CeleryTaskFinding] = field(default_factory=list)
     direct_sql: list[DirectSQLFinding] = field(default_factory=list)
     n_plus_one: list[NPlusOneFinding] = field(default_factory=list)
-    migration_safety: list[MigrationSafetyFinding] = field(default_factory=list)  
+    migration_safety: list[MigrationSafetyFinding] = field(default_factory=list)
+    n1_serializer_risk: list[N1SerializerFinding] = field(default_factory=list)
     skipped_detectors: tuple[str, ...] = ()
 
 
@@ -143,12 +146,17 @@ def run_analysis(
             if "n_plus_one" in ignored_set
             else n_plus_one.detect(project_path, ignore_paths=ignore_paths)
         ),
-        skipped_detectors=tuple(
-            detector for detector in VALID_DETECTORS if detector in ignored_set
-        ),
         migration_safety=(
             []
             if "migration_safety" in ignored_set
             else migration_safety.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        n1_serializer_risk=(
+            []
+            if "n1_serializer_risk" in ignored_set
+            else n1_serializer_risk.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        skipped_detectors=tuple(
+            detector for detector in VALID_DETECTORS if detector in ignored_set
         ),
     )

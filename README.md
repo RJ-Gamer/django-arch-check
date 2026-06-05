@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.7.2-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.8.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
-![Detectors](https://img.shields.io/badge/DETECTORS-8-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-214%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Detectors](https://img.shields.io/badge/DETECTORS-9-orange?style=for-the-badge)
+![Tests](https://img.shields.io/badge/TESTS-222%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -21,6 +21,7 @@ It scans source code statically and flags structural issues before they become e
 - Celery tasks without retry
 - Direct SQL usage
 - N+1 query risks
+- N+1 serializer risks
 - Migration safety risks
 
 ```text
@@ -112,7 +113,7 @@ django-arch-check analyze \
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.7.0
+    rev: v0.8.0
     hooks:
       - id: django-arch-check
 ```
@@ -124,7 +125,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.7.0
+    rev: v0.8.0
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -151,11 +152,12 @@ Valid detector names:
 - `direct_sql`
 - `n_plus_one`
 - `migration_safety`
+- `n1_serializer_risk`
 
 If an invalid detector name is passed, the CLI exits with a clear error:
 
 ```text
-Error: Unknown detector 'fat_modelz'. Valid detectors are: fat_models, god_apps, circular_imports, missing_service_layer, celery_tasks, direct_sql, n_plus_one, migration_safety
+Error: Unknown detector 'fat_modelz'. Valid detectors are: fat_models, god_apps, circular_imports, missing_service_layer, celery_tasks, direct_sql, n_plus_one, migration_safety, n1_serializer_risk
 ```
 
 In HTML reports, skipped detectors are shown as:
@@ -354,6 +356,21 @@ Notes:
 - Skips `__init__.py`
 - Does not block or fail — advises only
 
+### N+1 Serializer Risk
+
+Flags DRF serializer and viewset patterns that commonly trigger per-object ORM access.
+
+- Error: ORM call inside a `SerializerMethodField` getter
+- Error: nested serializer field with no matching `prefetch_related(...)` or `select_related(...)` in the paired viewset
+- Error: serializer `source=` targeting a model `@property` that performs ORM work
+- Warning: bare `queryset = Model.objects.all()` on a viewset paired with a relational serializer
+
+Notes:
+
+- Uses static AST analysis only; it does not import Django or DRF
+- Includes code snippets in HTML, JSON, and SARIF output
+- Treats detector-level `error` findings as critical in aggregate report badges and score summaries
+
 ---
 
 ## HTML Report
@@ -373,6 +390,7 @@ It includes:
 - Summary counts for critical and warning findings
 - A per-detector score breakdown table
 - One section per detector
+- Accordion-style code snippets for findings that include source context
 - Sticky severity filters for critical-only and warning-only views
 - Skipped detector notes when `--ignore` is used
 - Dark and light theme toggle with `localStorage` persistence
@@ -403,6 +421,7 @@ Default detector weights:
 - `direct_sql` warning = `2`
 - `god_apps` critical = `3`, warning = `1.5`
 - `fat_models` critical = `2`, warning = `1`
+- `n1_serializer_risk` error = `3`, warning = `1.5`
 
 Grades:
 
@@ -433,6 +452,7 @@ It includes:
 - Project path and generation timestamp
 - Health score and severity summary
 - Per-detector findings, skip state, and normalized messages
+- Code snippet payloads for detectors that provide source context
 
 The JSON summary uses the same project-aware health score calculation as the HTML report.
 
@@ -529,6 +549,7 @@ That makes it safe to run in CI, pre-commit hooks, and partially broken repos.
 - `--ignore-path` uses substring matching, not glob syntax
 - Missing service layer detection only scans files literally named `views.py`
 - N+1 detection is heuristic and only reasons within a single function scope
+- Serializer N+1 detection is heuristic and relies on class-name and field-name matching across serializers, models, and viewsets
 - God app analysis requires at least 2 detectable Django apps
 
 ---
@@ -566,6 +587,7 @@ django_arch_check/
     ├── celery_tasks.py
     ├── direct_sql.py
     ├── migration_safety.py
+    ├── n1_serializer_risk.py
     └── n_plus_one.py
 
 tests/
@@ -578,6 +600,7 @@ tests/
 ├── test_celery_tasks.py
 ├── test_direct_sql.py
 ├── test_migration_safety.py
+├── test_n1_serializer_risk.py
 ├── test_n_plus_one.py
 ├── test_report.py
 └── test_cli.py
@@ -604,7 +627,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `0.7.1`.
+The current release version is `0.8.0`.
 
 ---
 

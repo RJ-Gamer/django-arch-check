@@ -250,7 +250,7 @@ def test_analyze_sarif_output_is_valid_sarif(proj: ProjectBuilder) -> None:
     payload = json.loads(result.output)
     assert payload["version"] == "2.1.0"
     assert payload["runs"][0]["tool"]["driver"]["name"] == "django-arch-check"
-    assert len(payload["runs"][0]["tool"]["driver"]["rules"]) == 8
+    assert len(payload["runs"][0]["tool"]["driver"]["rules"]) == 9
     assert payload["runs"][0]["results"] == []
     result.output.encode("cp1252")
 
