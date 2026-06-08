@@ -16,16 +16,22 @@ Weights reflect real-world risk — not just code style:
 
 Formula
 -------
-    weighted_score     = sum of all finding weights
-    normalized_density = weighted_score / ln(file_count + 1)
-    density_penalty    = min(65, round(normalized_density × 8))
-    absolute_penalty   = min(15, round(weighted_score × 0.08))
+    critical_weight    = sum of weights for critical/error findings only
+    warning_weight     = sum of weights for warning findings only
+    normalized_density = (critical_weight * 2 + warning_weight) / ln(file_count + 1)
+    density_penalty    = min(45, round(normalized_density × 4))
+    absolute_penalty   = min(10, round((critical_weight + warning_weight) × 0.05))
     score              = max(0, 100 − density_penalty − absolute_penalty)
 
 The logarithmic normalization ensures a fair comparison across codebase sizes:
 a 5-file project with 1 critical should score lower than a 500-file project
 with the same finding — because the finding represents a higher proportion
 of the total surface area.
+
+Critical findings are double-weighted in the density calculation so that
+architecture-breaking issues (circular imports, unsafe celery tasks) cause
+a steep penalty while warning-only findings (direct SQL, fat models) can
+never push a project into F territory alone.
 
 Grades
 ------
@@ -63,6 +69,16 @@ _DETECTOR_WEIGHTS: dict[str, dict[str, float]] = {
     "n1_serializer_risk": {"error": 3.0, "warning": 1.5},
 }
 
+# Maximum findings counted per detector — prevents a single noisy detector
+# (e.g. 27 direct_sql hits in test fixtures) from dominating the score.
+_DETECTOR_FINDING_CAP: dict[str, int] = {
+    "direct_sql": 8,
+    "migration_safety": 10,
+    "n_plus_one": 8,
+    "n1_serializer_risk": 8,
+    "fat_models": 6,
+}
+
 # ---------------------------------------------------------------------------
 # Section registry
 # ---------------------------------------------------------------------------
@@ -83,11 +99,12 @@ _SECTIONS: list[tuple[str, str]] = [
 # Scoring constants
 # ---------------------------------------------------------------------------
 
-_DENSITY_FACTOR: float = 8.0
-_ABSOLUTE_FACTOR: float = 0.08
-_DENSITY_PENALTY_CAP: int = 65
-_ABSOLUTE_PENALTY_CAP: int = 15
+_DENSITY_FACTOR: float = 4.0
+_ABSOLUTE_FACTOR: float = 0.05
+_DENSITY_PENALTY_CAP: int = 45
+_ABSOLUTE_PENALTY_CAP: int = 10
 _DEFAULT_FILE_COUNT: int = 50
+_MIN_FILE_COUNT: int = 30
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
@@ -155,16 +172,17 @@ def _count_python_files(project_path: str) -> int:
             d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
         ]
         count += sum(1 for f in filenames if f.endswith(".py"))
-    return max(1, count)
+    return max(_MIN_FILE_COUNT, count)
 
 
 def _compute_weighted_score(result: AnalysisResult) -> float:
-    """Return the total weighted impact of all findings."""
+    """Return the total weighted impact of all findings, with per-detector caps."""
     total = 0.0
     for detector_id, _ in _SECTIONS:
         findings = getattr(result, detector_id, [])
         weights = _DETECTOR_WEIGHTS.get(detector_id, {})
-        for finding in findings:
+        cap = _DETECTOR_FINDING_CAP.get(detector_id, len(findings))
+        for finding in findings[:cap]:
             severity = getattr(finding, "severity", "warning")
             total += weights.get(severity, 1.0)
     return total
@@ -176,8 +194,25 @@ def compute_score(result: AnalysisResult, project_path: str = "") -> int:
     if weighted == 0:
         return 100
 
+    # Split critical vs warning weight so criticals hit density harder
+    critical_weight = 0.0
+    warning_weight = 0.0
+    for detector_id, _ in _SECTIONS:
+        findings = getattr(result, detector_id, [])
+        weights = _DETECTOR_WEIGHTS.get(detector_id, {})
+        cap = _DETECTOR_FINDING_CAP.get(detector_id, len(findings))
+        for finding in findings[:cap]:
+            severity = getattr(finding, "severity", "warning")
+            w = weights.get(severity, 1.0)
+            if severity in ("critical", "error"):
+                critical_weight += w
+            else:
+                warning_weight += w
+
     file_count = _count_python_files(project_path)
-    normalized_density = weighted / math.log(file_count + 1)
+    # Criticals count double in density so architecture-breaking issues hurt more
+    blended = critical_weight * 2 + warning_weight
+    normalized_density = blended / math.log(file_count + 1)
     density_penalty = min(
         _DENSITY_PENALTY_CAP, round(normalized_density * _DENSITY_FACTOR)
     )
@@ -214,11 +249,22 @@ def score_label(score: int) -> str:
 
 
 def _score_color(score: int) -> str:
+    if score >= 90:
+        return "var(--clean)"
     if score >= 75:
         return "var(--clean)"
     if score >= 60:
         return "var(--warning)"
     return "var(--critical)"
+
+
+def _score_card_class(score: int) -> str:
+    """Return the ic card CSS class based on score."""
+    if score >= 75:
+        return "g-ok"
+    if score >= 60:
+        return "g-wa"
+    return "g-cr"
 
 
 def _score_status_text(score: int) -> str:
@@ -697,6 +743,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     grade = score_grade(score)
     label = score_label(score)
     color = _score_color(score)
+    grade_card_class = _score_card_class(score)
     project_name = _project_name(project_path)
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     status_text = _score_status_text(score)
@@ -1252,7 +1299,7 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
   <main class="container">
     <section class="s-wrap" data-reveal>
       <div class="i-grid">
-        <div class="ic g-cr"><div class="ic-num">{_e(grade)}</div><div class="ic-lbl">Health Grade</div><div class="ic-sub">Score {score} / 100</div></div>
+        <div class="ic {grade_card_class}"><div class="ic-num">{_e(grade)}</div><div class="ic-lbl">Health Grade</div><div class="ic-sub">Score {score} / 100</div></div>
         <div class="ic g-cr"><div class="ic-num">{total_criticals}</div><div class="ic-lbl">Critical</div><div class="ic-sub">Architecture violations</div></div>
         <div class="ic g-wa"><div class="ic-num">{total_warnings}</div><div class="ic-lbl">Warnings</div><div class="ic-sub">Requiring attention</div></div>
         <div class="ic g-ok"><div class="ic-num">{clean_sections}</div><div class="ic-lbl">Clean</div><div class="ic-sub">Detectors currently clean</div></div>

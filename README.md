@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.8.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.8.1-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-9-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-222%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-226%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -113,7 +113,7 @@ django-arch-check analyze \
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.8.0
+    rev: v0.8.1
     hooks:
       - id: django-arch-check
 ```
@@ -125,7 +125,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.8.0
+    rev: v0.8.1
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -399,17 +399,26 @@ When you generate HTML from the CLI, it also prints the score, grade, and label 
 
 ### Health Score
 
-The score is weighted by detector risk and normalized by project size, so a critical circular import hurts more than a warning-level code smell, and the same finding counts more in a 5-file project than in a 500-file one.
+The score is weighted by detector risk and normalized by project size. Critical findings count double in the density calculation so architecture-breaking issues hurt meaningfully more than warning-level code smells. A per-detector finding cap prevents a single noisy detector from dominating the result.
 
 Formula:
 
 ```text
-weighted_score     = sum of detector/severity weights
-normalized_density = weighted_score / ln(file_count + 1)
-density_penalty    = min(65, round(normalized_density * 8))
-absolute_penalty   = min(15, round(weighted_score * 0.08))
+critical_weight    = sum of weights for critical/error findings only
+warning_weight     = sum of weights for warning findings only
+normalized_density = (critical_weight * 2 + warning_weight) / ln(max(file_count, 30) + 1)
+density_penalty    = min(45, round(normalized_density * 4))
+absolute_penalty   = min(10, round((critical_weight + warning_weight) * 0.05))
 score              = max(0, 100 - density_penalty - absolute_penalty)
 ```
+
+Per-detector finding caps (findings beyond the cap do not contribute to the score):
+
+- `direct_sql` = `8`
+- `n_plus_one` = `8`
+- `n1_serializer_risk` = `8`
+- `migration_safety` = `10`
+- `fat_models` = `6`
 
 Default detector weights:
 
@@ -627,7 +636,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `0.8.0`.
+The current release version is `0.8.1`.
 
 ---
 

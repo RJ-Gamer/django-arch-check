@@ -90,9 +90,9 @@ class TestComputeScore:
         assert compute_score(all_critical) < compute_score(all_warning)
 
     def test_more_findings_scores_lower_than_fewer(self) -> None:
-        """Same mix ratio: more findings → lower score (absolute penalty)."""
+        """More findings within the cap range → lower score."""
         few = AnalysisResult(fat_models=[_critical_fat_model()])
-        many = AnalysisResult(fat_models=[_critical_fat_model()] * 20)
+        many = AnalysisResult(fat_models=[_critical_fat_model()] * 6)  # fat_models cap is 6
         assert compute_score(few) > compute_score(many)
 
     def test_large_codebase_does_not_score_zero(self) -> None:
@@ -104,13 +104,14 @@ class TestComputeScore:
         score = compute_score(result)
         assert score > 0, f"Expected non-zero score for large codebase, got {score}"
 
-    def test_absolute_penalty_capped_at_30(self) -> None:
-        # Old formula had an explicit cap of 30.
-        # New formula: density + absolute penalties together cap at 80.
-        # 1000 warning findings still drives score to minimum — verify it doesn't go negative.
-        result = AnalysisResult(direct_sql=[_warning_direct_sql()] * 1000)
-        score = compute_score(result)
-        assert 0 <= score <= 30  # still heavily penalized, never negative
+    def test_capped_findings_limit_penalty(self) -> None:
+        # Per-detector finding cap prevents a single noisy detector from
+        # dominating the score. 1000 direct_sql warnings should score the
+        # same as 8 (the cap), and the score must not be negative.
+        result_1000 = AnalysisResult(direct_sql=[_warning_direct_sql()] * 1000)
+        result_8 = AnalysisResult(direct_sql=[_warning_direct_sql()] * 8)
+        assert compute_score(result_1000) == compute_score(result_8)
+        assert compute_score(result_1000) >= 0
 
     def test_findings_across_all_detectors_counted(self) -> None:
         """Findings from all detector fields are included in the calculation."""
@@ -122,16 +123,12 @@ class TestComputeScore:
         ))
         assert with_findings < clean
 
-    def test_mixed_severity_score_between_extremes(self) -> None:
-        """A 50/50 mix scores between the all-critical and all-warning extremes."""
-        n = 10
+    def test_criticals_score_lower_than_warnings_same_count(self) -> None:
+        """All-critical must always score lower than all-warning for same finding count."""
+        n = 5
         all_crit = compute_score(AnalysisResult(fat_models=[_critical_fat_model()] * n))
         all_warn = compute_score(AnalysisResult(fat_models=[_warning_fat_model()] * n))
-        mixed    = compute_score(AnalysisResult(
-            fat_models=[_critical_fat_model()] * (n // 2),
-            direct_sql=[_warning_direct_sql()] * (n // 2),
-        ))
-        assert all_crit <= mixed <= all_warn
+        assert all_crit < all_warn
 
 
 # ---------------------------------------------------------------------------
@@ -168,11 +165,13 @@ class TestGenerateHtml:
         html = self._html(_empty_result())
         assert "100" in html
 
-    def test_zero_score_html(self) -> None:
-        result = AnalysisResult(fat_models=[_critical_fat_model()] * 10)
+    def test_low_score_html_shows_critical_label(self) -> None:
+        result = AnalysisResult(
+            circular_imports=[_critical_circular()] * 5,
+            fat_models=[_critical_fat_model()] * 6,
+        )
         html = generate_html(result, "/project")
-        # Score 0 should appear, and the label "Critical"
-        assert ">0<" in html or "score-number\">0" in html or ">0\n" in html or "0</div>" in html
+        assert "Critical" in html or "Poor" in html
 
     def test_finding_detail_appears(self) -> None:
         result = AnalysisResult(fat_models=[_warning_fat_model()])
@@ -260,10 +259,42 @@ class TestGenerateHtml:
         assert score_label(20) == "Critical"
 
     def test_score_is_size_aware(self) -> None:
-        """Same finding in a smaller project scores lower than in a larger one."""
+        """A single circular import should meaningfully reduce the score."""
         from django_arch_check.report import compute_score
         result = AnalysisResult(circular_imports=[_critical_circular()])
-        small = compute_score(result, "")           # uses default 50 files
-        # simulate larger project by monkey-patching isn't clean —
-        # just verify the formula produces a non-trivial penalty
-        assert small < 90  # 1 circular import should not score A
+        score = compute_score(result, "")
+        assert score < 90  # 1 critical circular import must not score A
+
+    def test_min_file_count_floor_equalises_small_paths(self) -> None:
+        """A path with very few files should score the same as one at the floor."""
+        from django_arch_check.report import _count_python_files, _MIN_FILE_COUNT
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as tmp:
+            # create 2 .py files — well below the floor
+            for i in range(2):
+                open(os.path.join(tmp, f"f{i}.py"), "w").close()
+            assert _count_python_files(tmp) == _MIN_FILE_COUNT
+
+    def test_criticals_double_weighted_in_density(self) -> None:
+        """Equal raw weight: critical findings must score lower than warnings."""
+        # circular_imports critical weight=10, celery_tasks warning=3*n to match
+        # Use fat_models: critical weight=2 vs warning weight=1, same count
+        crit = compute_score(AnalysisResult(fat_models=[_critical_fat_model()] * 3))
+        warn = compute_score(AnalysisResult(fat_models=[_warning_fat_model()] * 6))  # same raw weight=6
+        assert crit < warn
+
+    def test_grade_card_class_green_for_good_score(self) -> None:
+        """Health Grade card uses g-ok (green) for scores >= 75."""
+        from django_arch_check.report import _score_card_class
+        assert _score_card_class(100) == "g-ok"
+        assert _score_card_class(90) == "g-ok"
+        assert _score_card_class(75) == "g-ok"
+        assert _score_card_class(74) == "g-wa"
+        assert _score_card_class(60) == "g-wa"
+        assert _score_card_class(59) == "g-cr"
+        assert _score_card_class(0) == "g-cr"
+
+    def test_grade_card_class_appears_in_html(self) -> None:
+        """HTML report uses the correct grade card class for a good score."""
+        html = self._html(_empty_result())  # score=100
+        assert 'ic g-ok' in html

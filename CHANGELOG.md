@@ -5,6 +5,32 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.1] - 2026-06-08
+
+### Fixed
+
+- Fixed health score returning `F` (31/100) when scanning the tool's own repository. The old formula applied a density penalty factor of `8` with a cap of `65`, which meant even pure warning-only findings (e.g. 27 `direct_sql` hits in test fixtures) could max out the penalty and produce a misleading grade.
+- Fixed `Health Grade` summary card always rendering in red regardless of score. The card was hardcoded to `g-cr`; it now uses `g-ok` (green) for scores ≥ 75, `g-wa` (yellow) for 60–74, and `g-cr` (red) below 60.
+- Fixed a path-relativity bug where scanning a subdirectory scored lower than scanning the full project with more findings. Smaller `file_count` produced a smaller log denominator, inflating density for the same capped weight. A `_MIN_FILE_COUNT = 30` floor ensures consistent scores regardless of which directory is passed.
+
+### Changed
+
+- Reworked the scoring formula to be severity-aware. Critical and error findings now count `2×` in the density numerator while warnings count `1×`, so architecture-breaking issues (circular imports, unsafe Celery tasks) cause meaningfully steeper penalties than code-smell warnings.
+- Reduced `_DENSITY_FACTOR` from `8` to `4` and `_DENSITY_PENALTY_CAP` from `65` to `45` so warning-only projects can no longer reach `F` territory through density alone.
+- Added `_DETECTOR_FINDING_CAP` — per-detector ceiling on findings counted toward the score. Noisy detectors (`direct_sql` capped at 8, `n_plus_one` at 8, `migration_safety` at 10, `n1_serializer_risk` at 8, `fat_models` at 6) stop contributing past their cap, preventing a single high-count detector from dominating the result.
+- Added `_score_card_class` helper and wired it into the HTML report so the Health Grade summary card color always matches the actual score band.
+
+### Tests
+
+- Updated `test_more_findings_scores_lower_than_fewer` to stay within the `fat_models` cap so the assertion is meaningful.
+- Updated `test_low_score_html_shows_critical_label` (replaces `test_zero_score_html`) to reflect that the new formula no longer produces scores of exactly 0 for small critical finding sets.
+- Updated `test_score_is_size_aware` docstring and assertion to reflect that the floor fix intentionally equalises scores across path sizes.
+- Added `test_min_file_count_floor_equalises_small_paths` — verifies `_count_python_files` returns `_MIN_FILE_COUNT` for directories with fewer than 30 Python files.
+- Added `test_criticals_double_weighted_in_density` — verifies that equal raw weight with critical severity produces a lower score than the equivalent warning weight.
+- Added `test_grade_card_class_green_for_good_score` — covers all three branches of `_score_card_class`.
+- Added `test_grade_card_class_appears_in_html` — verifies `g-ok` renders in the HTML for a perfect score.
+- Test count: 226 passing.
+
 ## [v0.8.0] - 2026-06-05
 
 ### Added
