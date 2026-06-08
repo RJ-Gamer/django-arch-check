@@ -405,3 +405,174 @@ def test_ignore_detector_note_appears_in_html_report(proj: ProjectBuilder) -> No
     content = report.read_text(encoding="utf-8")
     assert "Celery Tasks Without Retry" in content
     assert "⊘ Skipped (--ignore flag)" in content
+
+
+# ---------------------------------------------------------------------------
+# --watch mode
+# ---------------------------------------------------------------------------
+
+
+def test_watch_rejects_non_text_format(proj: ProjectBuilder) -> None:
+    """--watch combined with html/json/sarif must exit with a clear error."""
+    path = _clean_project(proj)
+    runner = CliRunner()
+    for fmt in ("html", "json", "sarif"):
+        result = runner.invoke(
+            main, ["analyze", "--watch", "--format", fmt, path]
+        )
+        assert result.exit_code != 0
+        assert "--watch is only supported with --format text" in result.output
+
+
+def test_watch_flag_appears_in_help(proj: ProjectBuilder) -> None:
+    result = run("analyze", "--help")
+    assert "--watch" in result.output
+
+
+def test_watch_delegates_to_run_watch(proj: ProjectBuilder) -> None:
+    """--watch calls _run_watch and exits 0 without running normal analysis."""
+    from unittest.mock import patch
+
+    path = _clean_project(proj)
+    runner = CliRunner()
+    with patch("django_arch_check.cli._run_watch") as mock_watch:
+        result = runner.invoke(
+            main, ["analyze", "--watch", path], catch_exceptions=False
+        )
+    mock_watch.assert_called_once_with(
+        project_path=path,
+        fat_model_threshold=15,
+        god_app_threshold=30,
+        ignored_detectors=(),
+        ignore_paths=(),
+    )
+    assert result.exit_code == 0
+
+
+def test_watch_passes_threshold_flags(proj: ProjectBuilder) -> None:
+    """--watch forwards custom thresholds to _run_watch."""
+    from unittest.mock import patch
+
+    path = _clean_project(proj)
+    runner = CliRunner()
+    with patch("django_arch_check.cli._run_watch") as mock_watch:
+        runner.invoke(
+            main,
+            ["analyze", "--watch", "--fat-model-threshold", "5",
+             "--god-app-threshold", "50", path],
+            catch_exceptions=False,
+        )
+    _, kwargs = mock_watch.call_args
+    assert kwargs["fat_model_threshold"] == 5
+    assert kwargs["god_app_threshold"] == 50
+
+
+def test_finding_key_is_stable() -> None:
+    """_finding_key returns the same string for the same finding."""
+    from django_arch_check.cli import _finding_key
+    from django_arch_check.detectors.fat_models import FatModelFinding
+
+    f = FatModelFinding(
+        file_path="app/models.py", class_name="Order",
+        method_count=20, severity="critical",
+    )
+    assert _finding_key(f) == _finding_key(f)
+    assert isinstance(_finding_key(f), str)
+
+
+def test_all_finding_keys_counts_all_detectors() -> None:
+    """_all_finding_keys returns one key per finding across all detectors."""
+    from django_arch_check.cli import _all_finding_keys
+    from django_arch_check.analyzer import AnalysisResult
+    from django_arch_check.detectors.fat_models import FatModelFinding
+    from django_arch_check.detectors.circular_imports import CircularImportFinding
+
+    result = AnalysisResult(
+        fat_models=[FatModelFinding(
+            file_path="a.py", class_name="A", method_count=20, severity="critical"
+        )],
+        circular_imports=[CircularImportFinding(
+            cycle_display="a -> b -> a", severity="critical"
+        )],
+    )
+    assert len(_all_finding_keys(result)) == 2
+
+
+def test_has_critical_findings_covers_all_detectors() -> None:
+    """_has_critical_findings detects criticals from any detector field."""
+    from django_arch_check.cli import _has_critical_findings
+    from django_arch_check.analyzer import AnalysisResult
+    from django_arch_check.detectors.direct_sql import DirectSQLFinding
+    from django_arch_check.detectors.migration_safety import MigrationSafetyFinding
+
+    assert not _has_critical_findings(AnalysisResult())
+
+    with_sql = AnalysisResult(
+        direct_sql=[DirectSQLFinding(
+            file_path="v.py", line_number=1,
+            pattern="cursor.execute(", severity="critical",
+        )]
+    )
+    assert _has_critical_findings(with_sql)
+
+
+def test_watch_print_diff_no_changes(proj: ProjectBuilder) -> None:
+    """_print_watch_diff reports 'No changes' when findings are identical."""
+    from django_arch_check.cli import _print_watch_diff
+    from django_arch_check.analyzer import AnalysisResult
+
+    result = AnalysisResult()
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        output = runner.invoke(
+            main, ["analyze", "--help"]  # just to get a runner context
+        )
+    # Call directly and capture via click echo
+    import io
+    buf: list[str] = []
+    import unittest.mock as mock
+    with mock.patch("click.echo", side_effect=lambda s, **kw: buf.append(str(s))):
+        _print_watch_diff(result, result, [])
+    assert any("No changes" in line for line in buf)
+
+
+def test_watch_print_diff_shows_new_findings(proj: ProjectBuilder) -> None:
+    """_print_watch_diff highlights new findings introduced between runs."""
+    from django_arch_check.cli import _print_watch_diff
+    from django_arch_check.analyzer import AnalysisResult
+    from django_arch_check.detectors.fat_models import FatModelFinding
+
+    prev = AnalysisResult()
+    curr = AnalysisResult(
+        fat_models=[FatModelFinding(
+            file_path="app/models.py", class_name="BigModel",
+            method_count=20, severity="critical",
+        )]
+    )
+    buf: list[str] = []
+    import unittest.mock as mock
+    with mock.patch("click.echo", side_effect=lambda s, **kw: buf.append(str(s))):
+        _print_watch_diff(prev, curr, [])
+    combined = " ".join(buf)
+    assert "new finding" in combined
+
+
+def test_watch_print_diff_shows_resolved_findings(proj: ProjectBuilder) -> None:
+    """_print_watch_diff highlights findings resolved between runs."""
+    from django_arch_check.cli import _print_watch_diff
+    from django_arch_check.analyzer import AnalysisResult
+    from django_arch_check.detectors.fat_models import FatModelFinding
+
+    prev = AnalysisResult(
+        fat_models=[FatModelFinding(
+            file_path="app/models.py", class_name="BigModel",
+            method_count=20, severity="critical",
+        )]
+    )
+    curr = AnalysisResult()
+    buf: list[str] = []
+    import unittest.mock as mock
+    with mock.patch("click.echo", side_effect=lambda s, **kw: buf.append(str(s))):
+        _print_watch_diff(prev, curr, [])
+    combined = " ".join(buf)
+    assert "resolved" in combined

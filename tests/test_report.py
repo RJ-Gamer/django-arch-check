@@ -268,11 +268,11 @@ class TestGenerateHtml:
     def test_min_file_count_floor_equalises_small_paths(self) -> None:
         """A path with very few files should score the same as one at the floor."""
         from django_arch_check.report import _count_python_files, _MIN_FILE_COUNT
-        import tempfile, os
+        import tempfile
+        from pathlib import Path
         with tempfile.TemporaryDirectory() as tmp:
-            # create 2 .py files — well below the floor
             for i in range(2):
-                open(os.path.join(tmp, f"f{i}.py"), "w").close()
+                (Path(tmp) / f"f{i}.py").touch()
             assert _count_python_files(tmp) == _MIN_FILE_COUNT
 
     def test_criticals_double_weighted_in_density(self) -> None:

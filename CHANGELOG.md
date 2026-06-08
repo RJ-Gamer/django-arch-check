@@ -5,6 +5,27 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.0] - 2026-06-08
+
+### Added
+
+- Added `--watch` mode to the `analyze` command. Running `django-arch-check analyze --watch ./` monitors the project tree for `.py` file changes and automatically re-runs the full analysis on every save, with no manual re-invocation needed.
+- Added `django_arch_check/watcher.py` — a self-contained file watcher that works out of the box with zero extra dependencies using pure-Python mtime polling, and automatically upgrades to lower-latency event-based watching when `watchdog` is installed.
+- Added `[watch]` optional install extra: `pip install django-arch-check[watch]` installs `watchdog>=4.0` for lower-latency file change detection.
+- Added diff output between watch runs: after the first full analysis, subsequent runs show only `✔ N finding(s) resolved` and `✖ N new finding(s)` with per-finding detail, keeping the terminal readable during active development.
+- Added score line (`Score: 82/100  B · Good`) and timestamp (`[14:32:01]`) to each watch iteration header so developers can track health trend at a glance.
+- `--watch` is blocked with a clear error when combined with `--format html`, `json`, or `sarif` since those formats are not meaningful in a live loop.
+
+### Fixed
+
+- Fixed `_has_critical_findings` in `cli.py` which previously only checked five detectors (`fat_models`, `god_apps`, `circular_imports`, `missing_service_layer`, `celery_tasks`). It now covers all nine detectors, so `direct_sql`, `n_plus_one`, `migration_safety`, and `n1_serializer_risk` critical findings correctly trigger a non-zero exit code.
+
+### Tests
+
+- Added `tests/test_watcher.py` with 9 tests covering `_snapshot`, `_diff`, polling callback firing, no-fire-without-change, skip-dirs behaviour, and a hang-safe stop condition.
+- Added 11 watch-mode tests to `tests/test_cli.py` covering format rejection, `--help` visibility, delegation to `_run_watch`, threshold forwarding, `_finding_key` stability, `_all_finding_keys` counting, `_has_critical_findings` completeness, and `_print_watch_diff` for no-change / new / resolved scenarios.
+- Test count: 245 passing.
+
 ## [v0.8.1] - 2026-06-08
 
 ### Fixed

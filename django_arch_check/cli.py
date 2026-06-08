@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 
 import click
 
@@ -12,9 +14,8 @@ from django_arch_check.analyzer import (
     run_analysis,
     validate_ignored_detectors,
 )
-from django_arch_check.report import compute_score, generate_html
-from django_arch_check.serializers import generate_json, generate_sarif
 from django_arch_check.report import compute_score, generate_html, score_grade, score_label
+from django_arch_check.serializers import generate_json, generate_sarif
 
 # ---------------------------------------------------------------------------
 # Severity styling
@@ -234,6 +235,33 @@ def _print_direct_sql(result: AnalysisResult) -> None:
     click.echo(click.style(f"  Found {count} direct SQL usage(s).", fg="yellow"))
 
 
+def _print_n1_serializer_risk(result: AnalysisResult) -> None:
+    """Print N+1 serializer-risk findings and their section summary."""
+    findings = result.n1_serializer_risk
+
+    click.echo()
+    click.echo(click.style("── N+1 Serializer Risk ─────────────────────", bold=True))
+
+    if _is_skipped(result, "n1_serializer_risk"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
+
+    if not findings:
+        click.echo(click.style("  No N+1 serializer risks found.", fg="green"))
+        return
+
+    for f in findings:
+        label = _severity_label(f.severity)
+        click.echo(
+            f"  {label} {f.file}:{f.line} → "
+            + click.style(f.message, bold=True)
+        )
+
+    count = len(findings)
+    click.echo()
+    click.echo(click.style(f"  Found {count} N+1 serializer risk(s).", fg="yellow"))
+
+
 def _print_n_plus_one(result: AnalysisResult) -> None:
     """Print N+1 query-risk findings and their section summary."""
     findings = result.n_plus_one
@@ -315,14 +343,157 @@ def _write_html_report(result: AnalysisResult, project_path: str) -> None:
     click.echo(click.style(f"  Report saved: {out_path}", fg="cyan"))
 
 def _has_critical_findings(result: AnalysisResult) -> bool:
-    """Return True if any detector emitted a critical finding."""
-    return (
-        any(f.severity == "critical" for f in result.fat_models)
-        or any(f.severity == "critical" for f in result.god_apps)
-        or any(f.severity == "critical" for f in result.circular_imports)
-        or any(f.severity == "critical" for f in result.missing_service_layer)
-        or any(f.severity == "critical" for f in result.celery_tasks)
+    """Return True if any detector emitted a critical or error finding."""
+    from django_arch_check.report import _SECTIONS
+    return any(
+        getattr(f, "severity", "") in ("critical", "error")
+        for attr, _ in _SECTIONS
+        for f in getattr(result, attr, [])
     )
+
+
+def _print_text_result(result: AnalysisResult) -> None:
+    """Print all detector sections to stdout in text format."""
+    _print_fat_models(result)
+    _print_god_apps(result)
+    _print_circular_imports(result)
+    _print_missing_service_layer(result)
+    _print_celery_tasks(result)
+    _print_direct_sql(result)
+    _print_n_plus_one(result)
+    _print_migration_safety(result)
+    _print_n1_serializer_risk(result)
+
+
+def _finding_key(finding: object) -> str:
+    """Return a stable string identity for a finding used to detect diffs."""
+    parts = [
+        getattr(finding, attr, "")
+        for attr in ("file_path", "file", "class_name", "view_name", "task_name",
+                     "cycle_display", "app_path", "pattern", "line_number",
+                     "line", "operation", "migration_name", "message", "severity")
+    ]
+    return "|".join(str(p) for p in parts)
+
+
+def _all_finding_keys(result: AnalysisResult) -> set[str]:
+    from django_arch_check.report import _SECTIONS
+    return {
+        _finding_key(f)
+        for attr, _ in _SECTIONS
+        for f in getattr(result, attr, [])
+    }
+
+
+def _print_watch_diff(
+    prev: AnalysisResult | None,
+    curr: AnalysisResult,
+    changed_files: list[str],
+) -> None:
+    """Print only what changed between two analysis runs."""
+    from django_arch_check.report import _SECTIONS
+
+    if changed_files:
+        click.echo(
+            click.style("  Changed: ", fg="cyan")
+            + ", ".join(os.path.basename(p) for p in changed_files[:5])
+            + (f" (+{len(changed_files) - 5} more)" if len(changed_files) > 5 else "")
+        )
+
+    if prev is None:
+        _print_text_result(curr)
+        return
+
+    prev_keys = _all_finding_keys(prev)
+    curr_keys = _all_finding_keys(curr)
+    resolved = prev_keys - curr_keys
+    new_keys = curr_keys - prev_keys
+
+    if not resolved and not new_keys:
+        click.echo(click.style("  No changes to findings.", fg="green"))
+        return
+
+    if resolved:
+        click.echo(
+            click.style(f"  ✔  {len(resolved)} finding(s) resolved.", fg="green")
+        )
+    if new_keys:
+        click.echo(
+            click.style(f"  ✖  {len(new_keys)} new finding(s):", fg="red", bold=True)
+        )
+        for attr, title in _SECTIONS:
+            prev_attr_keys = {_finding_key(f) for f in getattr(prev, attr, [])}
+            for f in getattr(curr, attr, []):
+                if _finding_key(f) not in prev_attr_keys:
+                    sev = getattr(f, "severity", "warning")
+                    label = _severity_label(sev)
+                    click.echo(f"    {label} [{title}] {_finding_key(f).split('|')[0]}")
+
+
+def _run_watch(
+    project_path: str,
+    fat_model_threshold: int,
+    god_app_threshold: int,
+    ignored_detectors: tuple[str, ...],
+    ignore_paths: tuple[str, ...],
+) -> None:
+    """Run analysis in watch mode, re-running on every .py file change."""
+    from django_arch_check.watcher import _snapshot, _diff
+
+    def _do_run(prev: AnalysisResult | None, changed: list[str]) -> AnalysisResult:
+        now = time.strftime("%H:%M:%S")
+        click.echo()
+        click.echo(click.style("─" * 50, fg="cyan"))
+        click.echo(
+            click.style(f"[{now}] ", fg="cyan")
+            + click.style(f"Analyzing: {project_path}", bold=True)
+        )
+        result = run_analysis(
+            project_path,
+            fat_model_threshold=fat_model_threshold,
+            god_app_threshold=god_app_threshold,
+            ignored_detectors=ignored_detectors,
+            ignore_paths=ignore_paths,
+        )
+        sc = compute_score(result, project_path)
+        grade = score_grade(sc)
+        label = score_label(sc)
+        color = "green" if sc >= 75 else "yellow" if sc >= 60 else "red"
+        click.echo(
+            click.style(f"  Score: {sc}/100  {grade} · {label}", fg=color, bold=True)
+        )
+        _print_watch_diff(prev, result, changed)
+        return result
+
+    click.echo(
+        click.style("django-arch-check ", bold=True)
+        + click.style(f"v{__version__}", fg="cyan")
+        + click.style(" — watch mode", fg="cyan")
+    )
+    click.echo(click.style(f"  Watching: {project_path}", fg="cyan"))
+    click.echo(click.style("  Press Ctrl+C to stop.", fg="cyan"))
+
+    prev_result: AnalysisResult | None = None
+    prev_result = _do_run(None, [])
+
+    current_snapshot = _snapshot(project_path)
+
+    try:
+        while True:
+            time.sleep(1)
+            fresh_snapshot = _snapshot(project_path)
+            changed = _diff(current_snapshot, fresh_snapshot)
+            if changed:
+                current_snapshot = fresh_snapshot
+                # debounce: wait briefly for rapid multi-file saves
+                time.sleep(0.3)
+                fresh_snapshot = _snapshot(project_path)
+                changed = _diff(current_snapshot, fresh_snapshot) or changed
+                current_snapshot = fresh_snapshot
+                prev_result = _do_run(prev_result, changed)
+    except KeyboardInterrupt:
+        click.echo()
+        click.echo(click.style("  Watch stopped.", fg="cyan"))
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +551,13 @@ def main() -> None:
     show_default=True,
     help="Output format: text/html/json/sarif. HTML writes arch-report.html; the others use stdout.",
 )
+@click.option(
+    "--watch",
+    "watch_mode",
+    is_flag=True,
+    default=False,
+    help="Re-run analysis automatically on every .py file change. Text format only.",
+)
 def analyze(
     project_path: str,
     fat_model_threshold: int,
@@ -387,12 +565,26 @@ def analyze(
     ignored_detectors: tuple[str, ...],
     ignore_paths: tuple[str, ...],
     output_format: str,
+    watch_mode: bool,
 ) -> None:
     """Analyze a Django project at PROJECT_PATH for architectural issues."""
     try:
         ignored_detectors = validate_ignored_detectors(ignored_detectors)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+
+    if watch_mode and output_format != "text":
+        raise click.ClickException("--watch is only supported with --format text.")
+
+    if watch_mode:
+        _run_watch(
+            project_path=project_path,
+            fat_model_threshold=fat_model_threshold,
+            god_app_threshold=god_app_threshold,
+            ignored_detectors=ignored_detectors,
+            ignore_paths=ignore_paths,
+        )
+        return
 
     result = run_analysis(
         project_path,
@@ -415,15 +607,7 @@ def analyze(
         click.echo(generate_sarif(result, project_path))
 
     else:
-        _print_fat_models(result)
-        _print_god_apps(result)
-        _print_circular_imports(result)
-        _print_missing_service_layer(result)
-        _print_celery_tasks(result)
-        _print_direct_sql(result)
-        _print_n_plus_one(result)
-        _print_migration_safety(result)
-
+        _print_text_result(result)
 
     # Exit non-zero if any critical findings exist across all detectors.
     if _has_critical_findings(result):

@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.8.1-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-0.9.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-9-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-226%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-245%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -113,7 +113,7 @@ django-arch-check analyze \
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.8.1
+    rev: v0.9.0
     hooks:
       - id: django-arch-check
 ```
@@ -125,7 +125,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.8.1
+    rev: v0.9.0
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -208,6 +208,8 @@ Options:
                            Output format: text/html/json/sarif. HTML writes
                            arch-report.html; the others use stdout.  [default:
                            text]
+  --watch                  Re-run analysis automatically on every .py file
+                           change. Text format only.
   --help                   Show this message and exit.
 ```
 
@@ -219,6 +221,59 @@ Options:
 | `1` | At least one critical finding, or a CLI usage error |
 
 This makes the tool suitable for CI gating.
+
+---
+
+## Watch Mode
+
+`--watch` turns `django-arch-check` into a live feedback loop. It runs a full analysis immediately, then re-runs automatically every time a `.py` file is saved.
+
+```bash
+# Start watching the current directory
+django-arch-check analyze --watch ./
+
+# Watch with custom thresholds and ignored detectors
+django-arch-check analyze --watch --fat-model-threshold 20 --ignore direct_sql ./
+```
+
+Each run prints a timestamp, health score, and a diff showing only what changed:
+
+```text
+django-arch-check v0.9.0 — watch mode
+  Watching: /home/user/myproject
+  Press Ctrl+C to stop.
+
+──────────────────────────────────────────────────
+[14:32:01] Analyzing: /home/user/myproject
+  Score: 91/100  A · Excellent
+  [full output on first run]
+
+──────────────────────────────────────────────────
+[14:32:44] Analyzing: /home/user/myproject
+  Score: 87/100  B · Good
+  Changed: views.py
+  ✖  1 new finding(s):
+    [WARNING]   [Missing Service Layer] orders/views.py
+
+──────────────────────────────────────────────────
+[14:33:10] Analyzing: /home/user/myproject
+  Score: 91/100  A · Excellent
+  Changed: views.py
+  ✔  1 finding(s) resolved.
+```
+
+Press `Ctrl+C` to stop.
+
+### Lower-latency watching
+
+By default the watcher polls for file changes every second. Install `watchdog` to switch to event-based detection with sub-100ms latency:
+
+```bash
+pip install django-arch-check[watch]
+django-arch-check analyze --watch ./
+```
+
+`--watch` only works with `--format text`. Using it with `html`, `json`, or `sarif` exits with a clear error.
 
 ---
 
@@ -612,6 +667,7 @@ tests/
 ├── test_n1_serializer_risk.py
 ├── test_n_plus_one.py
 ├── test_report.py
+├── test_watcher.py
 └── test_cli.py
 ```
 
@@ -636,7 +692,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `0.8.1`.
+The current release version is `0.9.0`.
 
 ---
 
