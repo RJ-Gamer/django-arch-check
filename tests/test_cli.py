@@ -10,6 +10,7 @@ from unittest.mock import Mock
 from click.testing import CliRunner
 
 from django_arch_check import analyzer
+from django_arch_check.baseline import BASELINE_FILENAME
 from django_arch_check.cli import main
 from tests.conftest import ProjectBuilder
 
@@ -309,6 +310,133 @@ def test_god_app_threshold_flag(proj: ProjectBuilder) -> None:
     # Raise threshold to 90% → nothing flagged
     result_high = run("analyze", "--god-app-threshold", "90", proj_path=proj.path)
     assert "No god apps found" in result_high.output
+
+
+# ---------------------------------------------------------------------------
+# Config file support
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_uses_pyproject_config_when_flags_omitted(proj: ProjectBuilder) -> None:
+    proj.write("app/__init__.py", "")
+    proj.write(
+        "app/models.py",
+        (
+            "from django.db import models\n"
+            "class Small(models.Model):\n"
+            + "\n".join(f"    def m{i}(self): pass" for i in range(6))
+        ),
+    )
+    proj.write(
+        "pyproject.toml",
+        "[tool.django-arch-check]\nfat-model-threshold = 5\n",
+    )
+
+    result = run("analyze", proj_path=proj.path)
+
+    assert result.exit_code == 0
+    assert "Small" in result.output
+
+
+def test_analyze_cli_flags_override_config_even_at_default_value(
+    proj: ProjectBuilder,
+) -> None:
+    proj.write("app/__init__.py", "")
+    proj.write(
+        "app/models.py",
+        (
+            "from django.db import models\n"
+            "class Small(models.Model):\n"
+            + "\n".join(f"    def m{i}(self): pass" for i in range(6))
+        ),
+    )
+    proj.write(
+        "pyproject.toml",
+        "[tool.django-arch-check]\nfat-model-threshold = 5\n",
+    )
+
+    result = run(
+        "analyze",
+        "--fat-model-threshold",
+        "15",
+        proj_path=proj.path,
+    )
+
+    assert result.exit_code == 0
+    assert "Small" not in result.output
+
+
+def test_analyze_invalid_config_shows_clear_error(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    proj.write("pyproject.toml", "[tool.django-arch-check\nignore = []\n")
+
+    result = run("analyze", proj_path=path)
+
+    assert result.exit_code != 0
+    assert "Could not parse config file" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Baseline support
+# ---------------------------------------------------------------------------
+
+
+def test_baseline_command_writes_snapshot_file(proj: ProjectBuilder) -> None:
+    path = _critical_project(proj)
+
+    result = run("baseline", proj_path=path)
+
+    baseline_path = Path(path) / BASELINE_FILENAME
+    assert result.exit_code == 0
+    assert baseline_path.exists()
+    assert "Baseline written" in result.output
+
+
+def test_analyze_baseline_exits_zero_for_existing_findings(proj: ProjectBuilder) -> None:
+    path = _critical_project(proj)
+    run("baseline", proj_path=path)
+
+    result = run("analyze", "--baseline", proj_path=path)
+
+    assert result.exit_code == 0
+    assert "Baseline active" in result.output
+
+
+def test_analyze_baseline_exits_one_for_new_findings(proj: ProjectBuilder) -> None:
+    path = _critical_project(proj)
+    run("baseline", proj_path=path)
+    proj.write(
+        "billing/models.py",
+        (
+            "from django.db import models\n"
+            "class Invoice(models.Model):\n"
+            + "\n".join(f"    def m{i}(self): pass" for i in range(30))
+        ),
+    )
+
+    result = run("analyze", "--baseline", proj_path=path)
+
+    assert result.exit_code == 1
+    assert "Invoice" in result.output
+
+
+def test_analyze_baseline_requires_existing_file(proj: ProjectBuilder) -> None:
+    path = _critical_project(proj)
+
+    result = run("analyze", "--baseline", proj_path=path)
+
+    assert result.exit_code != 0
+    assert "No baseline file found" in result.output
+
+
+def test_watch_rejects_baseline_mode(proj: ProjectBuilder) -> None:
+    path = _clean_project(proj)
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["analyze", "--watch", "--baseline", path])
+
+    assert result.exit_code != 0
+    assert "--baseline cannot be combined with --watch" in result.output
 
 
 # ---------------------------------------------------------------------------

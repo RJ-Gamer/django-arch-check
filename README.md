@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-0.9.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.0.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
-![Status](https://img.shields.io/badge/STATUS-ACTIVE-brightgreen?style=for-the-badge)
+![Status](https://img.shields.io/badge/STATUS-STABLE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-9-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-245%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-275%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -102,7 +102,57 @@ django-arch-check analyze \
   --fat-model-threshold 20 \
   --god-app-threshold 40 \
   /path/to/project
+
+# Snapshot today's findings, then only fail CI on new critical regressions
+django-arch-check baseline /path/to/project
+django-arch-check analyze --baseline /path/to/project
 ```
+
+---
+
+## Config Files
+
+`django-arch-check` can load project defaults from either:
+
+- `pyproject.toml` under `[tool.django-arch-check]`
+- `.arch-check.toml` in the project root
+
+Example:
+
+```toml
+[tool.django-arch-check]
+fat-model-threshold = 20
+god-app-threshold = 35
+ignore = ["direct_sql"]
+ignore-path = ["legacy/", "archive/"]
+```
+
+Or with a dedicated dotfile:
+
+```toml
+fat-model-threshold = 20
+god-app-threshold = 35
+ignore = ["direct_sql"]
+ignore-path = ["legacy/", "archive/"]
+```
+
+If both files exist, `.arch-check.toml` wins. Explicit CLI flags always override config-file values.
+
+---
+
+## Baseline Workflow
+
+Baselines make it practical to adopt `django-arch-check` in mature repositories without breaking CI on day one.
+
+```bash
+# Record current findings into .arch-baseline.json
+django-arch-check baseline /path/to/project
+
+# Later runs only fail on critical findings that are not in the baseline
+django-arch-check analyze --baseline /path/to/project
+```
+
+The baseline file should be committed to version control. When `--baseline` is active, existing findings remain visible in the report, but only new critical regressions affect the exit code.
 
 ---
 
@@ -113,7 +163,7 @@ django-arch-check analyze \
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.9.0
+    rev: v1.0.0
     hooks:
       - id: django-arch-check
 ```
@@ -125,7 +175,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v0.9.0
+    rev: v1.0.0
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -210,6 +260,8 @@ Options:
                            text]
   --watch                  Re-run analysis automatically on every .py file
                            change. Text format only.
+  --baseline               Only fail on findings not present in
+                           .arch-baseline.json.
   --help                   Show this message and exit.
 ```
 
@@ -217,8 +269,8 @@ Options:
 
 | Code | Meaning |
 |------|---------|
-| `0` | No critical findings |
-| `1` | At least one critical finding, or a CLI usage error |
+| `0` | No critical findings, or no new critical findings when `--baseline` is active |
+| `1` | At least one critical finding, or at least one new critical finding with `--baseline`, or a CLI usage error |
 
 This makes the tool suitable for CI gating.
 
@@ -239,7 +291,7 @@ django-arch-check analyze --watch --fat-model-threshold 20 --ignore direct_sql .
 Each run prints a timestamp, health score, and a diff showing only what changed:
 
 ```text
-django-arch-check v0.9.0 — watch mode
+django-arch-check v1.0.0 — watch mode
   Watching: /home/user/myproject
   Press Ctrl+C to stop.
 
@@ -554,6 +606,20 @@ If you want to ignore legacy areas while still gating the rest of the codebase:
     django-arch-check analyze --ignore-path legacy/ ./
 ```
 
+If you need incremental rollout on an existing codebase:
+
+```yaml
+- name: Create or refresh architecture baseline
+  run: |
+    pip install django-arch-check
+    django-arch-check baseline ./
+
+- name: Fail only on new architecture regressions
+  run: |
+    pip install django-arch-check
+    django-arch-check analyze --baseline ./
+```
+
 To generate an HTML report artifact:
 
 ```yaml
@@ -692,7 +758,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `0.9.0`.
+The current release version is `1.0.0`.
 
 ---
 

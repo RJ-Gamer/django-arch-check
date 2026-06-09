@@ -5,6 +5,30 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.0] - 2026-06-09
+
+### Added
+
+- Added project-level config file support. `django-arch-check` now reads defaults from either `pyproject.toml` under `[tool.django-arch-check]` or a dedicated `.arch-check.toml` file in the project root.
+- Added baseline snapshot support through a new `baseline` command and `analyze --baseline`. Teams can now commit `.arch-baseline.json` and fail CI only on new critical regressions.
+- Added focused tests for config loading, config parse/type validation, CLI config precedence, baseline file creation, and baseline-gated analyze flows.
+
+### Changed
+
+- Promoted the package metadata to `v1.0.0` and updated the project classifier from Alpha to Production/Stable.
+- Made explicit CLI options reliably override config-file values by using Click parameter-source tracking instead of inferring intent from default values.
+- Updated README usage, CI examples, and pre-commit snippets to document the new config and baseline workflows.
+
+### Fixed
+
+- Fixed a subtle precedence bug where passing an explicit CLI value equal to the built-in default (for example `--fat-model-threshold 15`) could still be overridden by a config file.
+- Fixed malformed config files being silently ignored. Invalid TOML or wrong value types now produce a clear CLI error instead of quietly falling back to defaults.
+
+### Tests
+
+- Added 10 tests across `tests/test_config.py` and `tests/test_cli.py` for config file parsing, CLI-over-config precedence, malformed config errors, baseline file generation, and baseline gating behavior.
+- Test count: 275 passing.
+
 ## [v0.9.0] - 2026-06-08
 
 ### Added

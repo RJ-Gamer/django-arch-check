@@ -7,6 +7,7 @@ import sys
 import time
 
 import click
+from click.core import ParameterSource
 
 from django_arch_check import __version__
 from django_arch_check.analyzer import (
@@ -14,6 +15,13 @@ from django_arch_check.analyzer import (
     run_analysis,
     validate_ignored_detectors,
 )
+from django_arch_check.baseline import (
+    BASELINE_FILENAME,
+    load_baseline,
+    new_findings,
+    write_baseline,
+)
+from django_arch_check.config import ArchConfig, load_config
 from django_arch_check.report import compute_score, generate_html, score_grade, score_label
 from django_arch_check.serializers import generate_json, generate_sarif
 
@@ -496,6 +504,43 @@ def _run_watch(
         click.echo(click.style("  Watch stopped.", fg="cyan"))
 
 
+def _load_project_config(project_path: str) -> ArchConfig:
+    """Load project config and convert parse/type failures into CLI errors."""
+    try:
+        return load_config(project_path)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _apply_config_defaults(
+    project_path: str,
+    *,
+    fat_model_threshold: int,
+    god_app_threshold: int,
+    ignored_detectors: tuple[str, ...],
+    ignore_paths: tuple[str, ...],
+) -> tuple[int, int, tuple[str, ...], tuple[str, ...]]:
+    """Merge config-file values with CLI options, letting explicit CLI input win."""
+    ctx = click.get_current_context()
+    cfg = _load_project_config(project_path)
+
+    if ctx.get_parameter_source("fat_model_threshold") is ParameterSource.DEFAULT:
+        fat_model_threshold = cfg.fat_model_threshold
+    if ctx.get_parameter_source("god_app_threshold") is ParameterSource.DEFAULT:
+        god_app_threshold = cfg.god_app_threshold
+    if ctx.get_parameter_source("ignored_detectors") is ParameterSource.DEFAULT:
+        ignored_detectors = cfg.ignore
+    if ctx.get_parameter_source("ignore_paths") is ParameterSource.DEFAULT:
+        ignore_paths = cfg.ignore_path
+
+    return (
+        fat_model_threshold,
+        god_app_threshold,
+        ignored_detectors,
+        ignore_paths,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI definition
 # ---------------------------------------------------------------------------
@@ -558,6 +603,13 @@ def main() -> None:
     default=False,
     help="Re-run analysis automatically on every .py file change. Text format only.",
 )
+@click.option(
+    "--baseline",
+    "use_baseline",
+    is_flag=True,
+    default=False,
+    help="Only fail on findings not present in .arch-baseline.json.",
+)
 def analyze(
     project_path: str,
     fat_model_threshold: int,
@@ -566,8 +618,22 @@ def analyze(
     ignore_paths: tuple[str, ...],
     output_format: str,
     watch_mode: bool,
+    use_baseline: bool,
 ) -> None:
     """Analyze a Django project at PROJECT_PATH for architectural issues."""
+    (
+        fat_model_threshold,
+        god_app_threshold,
+        ignored_detectors,
+        ignore_paths,
+    ) = _apply_config_defaults(
+        project_path,
+        fat_model_threshold=fat_model_threshold,
+        god_app_threshold=god_app_threshold,
+        ignored_detectors=ignored_detectors,
+        ignore_paths=ignore_paths,
+    )
+
     try:
         ignored_detectors = validate_ignored_detectors(ignored_detectors)
     except ValueError as exc:
@@ -575,6 +641,9 @@ def analyze(
 
     if watch_mode and output_format != "text":
         raise click.ClickException("--watch is only supported with --format text.")
+
+    if use_baseline and watch_mode:
+        raise click.ClickException("--baseline cannot be combined with --watch.")
 
     if watch_mode:
         _run_watch(
@@ -586,6 +655,18 @@ def analyze(
         )
         return
 
+    # Load baseline keys before running analysis so we can report clearly
+    baseline_keys: set[str] | None = None
+    if use_baseline:
+        try:
+            baseline_keys = load_baseline(project_path)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        if baseline_keys is None:
+            raise click.ClickException(
+                f"No baseline file found. Run 'django-arch-check baseline {project_path}' first."
+            )
+
     result = run_analysis(
         project_path,
         fat_model_threshold=fat_model_threshold,
@@ -594,8 +675,19 @@ def analyze(
         ignore_paths=ignore_paths,
     )
 
+    # When using baseline, determine what's new before output
+    result_for_exit = new_findings(result, baseline_keys) if baseline_keys is not None else result
+
     if output_format in {"text", "html"}:
         click.echo(click.style(f"Analyzing: {project_path}", bold=True))
+        if baseline_keys is not None:
+            from django_arch_check.report import _SECTIONS as _S
+            total = sum(len(getattr(result, a, [])) for a, _ in _S)
+            new_count = sum(len(getattr(result_for_exit, a, [])) for a, _ in _S)
+            click.echo(
+                click.style(f"  Baseline active: {total} total finding(s), "
+                            f"{new_count} new (not in baseline).", fg="cyan")
+            )
 
     if output_format == "html":
         _write_html_report(result, project_path)
@@ -609,6 +701,43 @@ def analyze(
     else:
         _print_text_result(result)
 
-    # Exit non-zero if any critical findings exist across all detectors.
-    if _has_critical_findings(result):
+    # Exit non-zero only on new findings when baseline is active
+    if _has_critical_findings(result_for_exit):
         sys.exit(1)
+
+
+@main.command()
+@click.argument(
+    "project_path",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, readable=True),
+)
+def baseline(project_path: str) -> None:
+    """Snapshot current findings into .arch-baseline.json.
+
+    Run this once to record existing debt, then use
+    'analyze --baseline' in CI to only fail on new regressions.
+    """
+    cfg = _load_project_config(project_path)
+    try:
+        ignored = validate_ignored_detectors(cfg.ignore)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(click.style(f"Analyzing: {project_path}", bold=True))
+    result = run_analysis(
+        project_path,
+        fat_model_threshold=cfg.fat_model_threshold,
+        god_app_threshold=cfg.god_app_threshold,
+        ignored_detectors=ignored,
+        ignore_paths=cfg.ignore_path,
+    )
+
+    out = write_baseline(result, project_path)
+    from django_arch_check.report import _SECTIONS as _S
+    total = sum(len(getattr(result, a, [])) for a, _ in _S)
+    click.echo(
+        click.style(f"  Baseline written: {out}", fg="cyan", bold=True)
+    )
+    click.echo(
+        click.style(f"  {total} finding(s) recorded. Commit {BASELINE_FILENAME} to version control.", fg="cyan")
+    )
