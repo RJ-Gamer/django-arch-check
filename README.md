@@ -1,7 +1,7 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-1.1.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.1.1-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-STABLE-brightgreen?style=for-the-badge)
@@ -164,7 +164,7 @@ The baseline file should be committed to version control. When `--baseline` is a
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v1.1.0
+    rev: v1.1.1
     hooks:
       - id: django-arch-check
 ```
@@ -176,7 +176,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v1.1.0
+    rev: v1.1.1
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -789,7 +789,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `1.1.0`.
+The current release version is `1.1.1`.
 
 ---
 

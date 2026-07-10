@@ -413,8 +413,12 @@
       border-radius:8px; padding:11px 15px; font-family:var(--mono); font-size:11px; color:var(--clean);
     }
     .clean-skip { color:var(--mu2); border-color:var(--br2); }
+    .clean-row-cr { color:var(--critical); border-color:var(--critical-b); }
+    .clean-row-wa { color:var(--warning); border-color:var(--warning-b); }
     .clean-dot { width:6px; height:6px; border-radius:50%; background:var(--clean); flex-shrink:0; }
     .clean-dot-skip { background:var(--mu2); }
+    .clean-dot-cr { background:var(--critical); }
+    .clean-dot-wa { background:var(--warning); }
 
     footer {
       margin-top:60px; padding-top:22px; border-top:1px solid var(--br);
@@ -495,12 +499,12 @@
       <span class="n-brand"><span class="n-ico">◈</span>django-arch-check</span>
       <div class="n-div"></div>
       <div class="n-score">
-        <span class="n-num">79</span>
+        <span class="n-num">100</span>
         <span class="n-sep">/ 100</span>
-        <span class="n-grade">B</span>
+        <span class="n-grade">A</span>
       </div>
       <div class="n-pills">
-        <span class="pill p-cr">1 critical</span>
+        <span class="pill p-cr">0 critical</span>
         <span class="pill p-wa">0 warning</span>
       </div>
       <button class="theme-btn" id="theme-toggle" type="button" onclick="toggleTheme()" aria-label="Switch theme">Dark</button>
@@ -515,25 +519,25 @@
   <section class="hero">
     <div class="hero-shell">
       <div class="h-content">
-        <div class="h-eye">Architecture Intelligence Report · django-arch-check v1.0.0</div>
+        <div class="h-eye">Architecture Intelligence Report · django-arch-check v1.1.1</div>
         <div class="h-score">
-          <span class="h-num">79</span>
+          <span class="h-num">100</span>
           <div class="h-meta">
             <span class="h-denom">/ 100</span>
-            <span class="h-grade">B</span>
+            <span class="h-grade">A</span>
           </div>
         </div>
         <div class="h-title">Architecture Report for <span style="color:var(--clean)">django_arch_check</span></div>
         <div class="h-sub">
           Weighted architectural health scoring across 10 detectors.
-          1 total finding(s), normalized by codebase size and detector risk.
+          0 total finding(s), normalized by codebase size and detector risk.
         </div>
-        <div class="h-badge status-clean"><span class="h-dot"></span>RISK CONTAINED</div>
-        <div class="h-inds"><div class="h-ind bad"><span class="i-d i-pulse"></span>Secret leakage risk — 1 exposure(s) detected</div><div class="h-ind good"><span class="i-d i-ok"></span>Fat Models — Clean</div><div class="h-ind good"><span class="i-d i-ok"></span>God Apps — Clean</div><div class="h-ind good"><span class="i-d i-ok"></span>Circular Imports — Clean</div></div>
+        <div class="h-badge status-clean"><span class="h-dot"></span>STRUCTURE STABLE</div>
+        <div class="h-inds"><div class="h-ind good"><span class="i-d i-ok"></span>All detectors clean — no architectural issues found</div></div>
         <div class="h-foot">
           Project <code class="h-code">.\django_arch_check\</code>
           <span>·</span>
-          <span>Generated 2026-07-10 06:42 UTC</span>
+          <span>Generated 2026-07-10 07:20 UTC</span>
         </div>
       </div>
       <div class="hero-side" aria-hidden="true">
@@ -548,11 +552,11 @@
                   stroke-dasharray="282.7"
                   stroke-dashoffset="282.7"/>
               </svg>
-              <span class="orbit-num">79</span>
+              <span class="orbit-num">100</span>
             </div>
             <div class="orbit-score-meta">
               <span>Health Score</span>
-              <em>B · Good</em>
+              <em>A · Excellent</em>
             </div>
           </div>
         </div>
@@ -563,14 +567,14 @@
   <main class="container">
     <section class="s-wrap" data-reveal>
       <div class="i-grid">
-        <div class="ic g-ok"><div class="ic-num">B</div><div class="ic-lbl">Health Grade</div><div class="ic-sub">Score 79 / 100</div></div>
-        <div class="ic g-cr"><div class="ic-num">1</div><div class="ic-lbl">Critical</div><div class="ic-sub">Architecture violations</div></div>
+        <div class="ic g-ok"><div class="ic-num">A</div><div class="ic-lbl">Health Grade</div><div class="ic-sub">Score 100 / 100</div></div>
+        <div class="ic g-cr"><div class="ic-num">0</div><div class="ic-lbl">Critical</div><div class="ic-sub">Architecture violations</div></div>
         <div class="ic g-wa"><div class="ic-num">0</div><div class="ic-lbl">Warnings</div><div class="ic-sub">Requiring attention</div></div>
-        <div class="ic g-ok"><div class="ic-num">8</div><div class="ic-lbl">Clean</div><div class="ic-sub">Detectors currently clean</div></div>
+        <div class="ic g-ok"><div class="ic-num">9</div><div class="ic-lbl">Clean</div><div class="ic-sub">Detectors currently clean</div></div>
       </div>
     </section>
 
-    <section class="s-wrap detector-section" data-reveal><div class="s-eye">Detector Analysis</div><div class="s-title">Score Breakdown</div><div class="det-wrap"><div class="det-row r-ok"><div class="d-info"><span class="d-name">Fat Models</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">God Apps</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Circular Imports</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Missing Service Layer</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Celery Tasks Without Retry</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">N+1 Query Risks</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Migration Safety</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">N+1 Serializer Risk</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-cr"><div class="d-info"><span class="d-name">Secret Leakage</span><span class="d-cnt">1 finding</span></div><div class="d-bg"><div class="d-bar b-cr" style="--w:100%"></div></div><span class="d-wt">9.0</span><span class="imp impact-high">HIGH</span></div></div></section>
+    <section class="s-wrap detector-section" data-reveal><div class="s-eye">Detector Analysis</div><div class="s-title">Score Breakdown</div><div class="det-wrap"><div class="det-row r-ok"><div class="d-info"><span class="d-name">Fat Models</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">God Apps</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Circular Imports</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Missing Service Layer</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Celery Tasks Without Retry</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">N+1 Query Risks</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Migration Safety</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">N+1 Serializer Risk</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div><div class="det-row r-ok"><div class="d-info"><span class="d-name">Secret Leakage</span><span class="d-cnt">Clean</span></div><div class="d-bg"><div class="d-bar b-ok" style="--w:0%"></div></div><span class="d-wt">—</span><span class="imp impact-none">NONE</span></div></div></section>
 
     <section class="s-wrap" data-reveal>
       <div class="s-eye">Intelligence Report</div>
@@ -584,14 +588,14 @@
 <section class="fg" data-section="n-plus-one"><button class="fg-head" type="button" onclick="toggleGroup('group-n-plus-one', this)"><span class="fg-left"><span class="fg-name">N+1 Query Risks</span></span><span class="fg-chev" aria-hidden="true">▼</span></button><div class="fg-body" id="group-n-plus-one"><div class="fg-note section-clean">No issues found</div></div></section>
 <section class="fg" data-section="migration-safety"><button class="fg-head" type="button" onclick="toggleGroup('group-migration-safety', this)"><span class="fg-left"><span class="fg-name">Migration Safety</span></span><span class="fg-chev" aria-hidden="true">▼</span></button><div class="fg-body" id="group-migration-safety"><div class="fg-note section-clean">No issues found</div></div></section>
 <section class="fg" data-section="n1-serializer-risk"><button class="fg-head" type="button" onclick="toggleGroup('group-n1-serializer-risk', this)"><span class="fg-left"><span class="fg-name">N+1 Serializer Risk</span></span><span class="fg-chev" aria-hidden="true">▼</span></button><div class="fg-body" id="group-n1-serializer-risk"><div class="fg-note section-clean">No issues found</div></div></section>
-<section class="fg" data-section="secret-leakage"><button class="fg-head" type="button" onclick="toggleGroup('group-secret-leakage', this)"><span class="fg-left"><span class="fg-name">Secret Leakage</span><span class="badge badge-critical">1 critical</span></span><span class="fg-chev" aria-hidden="true">▼</span></button><div class="fg-body" id="group-secret-leakage"><article class="fc" data-severity="critical"><button class="fc-top" type="button" onclick="toggleCard('card-0', this)"><span class="sv sv-cr">CRITICAL</span><code class="fc-path">analyzer.py</code><span class="fc-fn">Hardcoded secret</span><span class="fc-chev" aria-hidden="true">▼</span></button><div class="fc-det">line 44 · API_KEY</div><div class="fc-body" id="card-0"><div class="fc-rows"><div class="fc-row"><span class="fc-lbl">Detector</span><span class="fc-val">Secret Leakage</span></div><div class="fc-row"><span class="fc-lbl">Severity</span><span class="fc-val">CRITICAL</span></div><div class="fc-row"><span class="fc-lbl">File</span><span class="fc-val">analyzer.py</span></div><div class="fc-row"><span class="fc-lbl">Line</span><span class="fc-val">44</span></div><div class="fc-row"><span class="fc-lbl">Issue</span><span class="fc-val">Hardcoded secret</span></div><div class="fc-row"><span class="fc-lbl">Detail</span><span class="fc-val">API_KEY</span></div></div></div></article></div></section></div>
+<section class="fg" data-section="secret-leakage"><button class="fg-head" type="button" onclick="toggleGroup('group-secret-leakage', this)"><span class="fg-left"><span class="fg-name">Secret Leakage</span></span><span class="fg-chev" aria-hidden="true">▼</span></button><div class="fg-body" id="group-secret-leakage"><div class="fg-note section-clean">No issues found</div></div></section></div>
     </section>
 
-    <section class="s-wrap" data-reveal><div class="s-eye">Coverage</div><div class="s-title">Detector Status</div><div class="clean-grid"><div class="clean-row"><span class="clean-dot"></span>Fat Models — Clean</div><div class="clean-row"><span class="clean-dot"></span>God Apps — Clean</div><div class="clean-row"><span class="clean-dot"></span>Circular Imports — Clean</div><div class="clean-row"><span class="clean-dot"></span>Missing Service Layer — Clean</div><div class="clean-row"><span class="clean-dot"></span>Celery Tasks Without Retry — Clean</div><div class="clean-row clean-skip"><span class="clean-dot clean-dot-skip"></span>Direct SQL — Skipped</div><div class="clean-row"><span class="clean-dot"></span>N+1 Query Risks — Clean</div><div class="clean-row"><span class="clean-dot"></span>Migration Safety — Clean</div><div class="clean-row"><span class="clean-dot"></span>N+1 Serializer Risk — Clean</div></div></section>
+    <section class="s-wrap" data-reveal><div class="s-eye">Coverage</div><div class="s-title">Detector Status</div><div class="clean-grid"><div class="clean-row"><span class="clean-dot"></span>Fat Models — Clean</div><div class="clean-row"><span class="clean-dot"></span>God Apps — Clean</div><div class="clean-row"><span class="clean-dot"></span>Circular Imports — Clean</div><div class="clean-row"><span class="clean-dot"></span>Missing Service Layer — Clean</div><div class="clean-row"><span class="clean-dot"></span>Celery Tasks Without Retry — Clean</div><div class="clean-row clean-skip"><span class="clean-dot clean-dot-skip"></span>Direct SQL — Skipped</div><div class="clean-row"><span class="clean-dot"></span>N+1 Query Risks — Clean</div><div class="clean-row"><span class="clean-dot"></span>Migration Safety — Clean</div><div class="clean-row"><span class="clean-dot"></span>N+1 Serializer Risk — Clean</div><div class="clean-row"><span class="clean-dot"></span>Secret Leakage — Clean</div></div></section>
 
     <footer>
       <span>Score = 100 − density_penalty − absolute_penalty · weighted by detector risk</span>
-      <span>django-arch-check v1.0.0</span>
+      <span>django-arch-check v1.1.1</span>
     </footer>
   </main>
 
@@ -682,7 +686,7 @@
     (function() {
       var arc = document.getElementById('meter-arc');
       if (!arc) return;
-      var score = 79;
+      var score = 100;
       var total = 282.7;
       var offset = total - (score / 100) * total;
       // Defer so the CSS transition animates from the initial dashoffset

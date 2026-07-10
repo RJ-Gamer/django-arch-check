@@ -740,16 +740,26 @@ def _render_detector_status_grid(result: AnalysisResult) -> str:
                 "</div>"
             )
             continue
-        if not getattr(result, detector_id):
+        findings = getattr(result, detector_id, [])
+        if not findings:
             cards.append(
                 '<div class="clean-row">'
                 '<span class="clean-dot"></span>'
                 f"{_e(title)} — Clean"
                 "</div>"
             )
-
-    if not cards:
-        return ""
+        else:
+            critical_count, warning_count = _count_severities(findings)
+            if critical_count:
+                row_cls, dot_cls, label = "clean-row clean-row-cr", "clean-dot clean-dot-cr", f"{critical_count} critical"
+            else:
+                row_cls, dot_cls, label = "clean-row clean-row-wa", "clean-dot clean-dot-wa", f"{warning_count} warning"
+            cards.append(
+                f'<div class="{row_cls}">'
+                f'<span class="{dot_cls}"></span>'
+                f"{_e(title)} — {label}"
+                "</div>"
+            )
 
     return (
         '<section class="s-wrap" data-reveal>'
@@ -1230,8 +1240,12 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
       border-radius:8px; padding:11px 15px; font-family:var(--mono); font-size:11px; color:var(--clean);
     }}
     .clean-skip {{ color:var(--mu2); border-color:var(--br2); }}
+    .clean-row-cr {{ color:var(--critical); border-color:var(--critical-b); }}
+    .clean-row-wa {{ color:var(--warning); border-color:var(--warning-b); }}
     .clean-dot {{ width:6px; height:6px; border-radius:50%; background:var(--clean); flex-shrink:0; }}
     .clean-dot-skip {{ background:var(--mu2); }}
+    .clean-dot-cr {{ background:var(--critical); }}
+    .clean-dot-wa {{ background:var(--warning); }}
 
     footer {{
       margin-top:60px; padding-top:22px; border-top:1px solid var(--br);

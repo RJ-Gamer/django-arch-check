@@ -5,6 +5,16 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.1] - 2026-06-10
+
+### Fixed
+
+- Fixed the HTML report "Detector Status" grid always showing only clean detectors. Detectors with findings were silently excluded from the grid, so `secret_leakage` (and any other detector with findings) would not appear. The grid now shows all 10 detectors: clean ones in green, detectors with findings in their severity color (critical red / warning amber), and skipped detectors in grey.
+
+### Tests
+
+- Test count: 336 passing.
+
 ## [v1.1.0] - 2026-06-10
 
 ### Added

@@ -41,8 +41,6 @@ from django_arch_check.detectors.n1_serializer_risk import N1SerializerFinding
 from django_arch_check.detectors.n_plus_one import NPlusOneFinding
 from django_arch_check.detectors.secret_leakage import SecretLeakageFinding
 
-API_KEY = "django-arch-check"
-
 VALID_DETECTORS: Final[tuple[str, ...]] = (
     "fat_models",
     "god_apps",
