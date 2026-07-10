@@ -80,6 +80,14 @@ _DETECTORS: Final[tuple[tuple[str, str, str, str], ...]] = (
         "prefetch/select coverage, serializer source= values that hit ORM-backed model "
         "@property methods, and bare viewset querysets paired with relational serializers.",
     ),
+    (
+        "secret_leakage",
+        "Secret Leakage",
+        "Hardcoded secrets, logged credentials, and DEBUG=True exposure risks.",
+        "Flags string literals assigned to secret-like names (API_KEY, PASSWORD, etc.), "
+        "logging calls that reference sensitive variable names, and DEBUG = True in "
+        "settings files which exposes tracebacks and configuration in HTTP error responses.",
+    ),
 )
 
 
@@ -323,12 +331,26 @@ def _finding_message(finding: object) -> str:
             f" → raw SQL detected: {getattr(finding, 'pattern')}"
         )
 
+    if hasattr(finding, "kind") and hasattr(finding, "detail"):
+        kind = getattr(finding, "kind")
+        detail = getattr(finding, "detail")
+        line = getattr(finding, "line_number", "?")
+        kind_label = {
+            "hardcoded_secret": "hardcoded secret",
+            "logged_secret": "secret logged",
+            "debug_true": "DEBUG = True",
+        }.get(kind, kind)
+        return (
+            f"{getattr(finding, 'file_path')}:{line}"
+            f" → {kind_label} — {detail}"
+        )
+
     if hasattr(finding, "line_number"):
         return (
             f"{getattr(finding, 'file_path')}:{getattr(finding, 'line_number')}"
             " → ORM call inside loop — possible N+1 query risk"
         )
-    
+
     if hasattr(finding, "migration_name") and hasattr(finding, "operation"):
         model = getattr(finding, "model_name", "")
         field = getattr(finding, "field_name", "")

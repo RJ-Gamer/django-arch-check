@@ -24,20 +24,24 @@ from django_arch_check.detectors import (
     direct_sql,
     fat_models,
     god_apps,
-    missing_service_layer,
-    n_plus_one,
     migration_safety,
+    missing_service_layer,
     n1_serializer_risk,
+    n_plus_one,
+    secret_leakage,
 )
 from django_arch_check.detectors.celery_tasks import CeleryTaskFinding
 from django_arch_check.detectors.circular_imports import CircularImportFinding
 from django_arch_check.detectors.direct_sql import DirectSQLFinding
 from django_arch_check.detectors.fat_models import FatModelFinding
 from django_arch_check.detectors.god_apps import GodAppFinding
-from django_arch_check.detectors.missing_service_layer import MissingServiceLayerFinding
-from django_arch_check.detectors.n_plus_one import NPlusOneFinding
 from django_arch_check.detectors.migration_safety import MigrationSafetyFinding
+from django_arch_check.detectors.missing_service_layer import MissingServiceLayerFinding
 from django_arch_check.detectors.n1_serializer_risk import N1SerializerFinding
+from django_arch_check.detectors.n_plus_one import NPlusOneFinding
+from django_arch_check.detectors.secret_leakage import SecretLeakageFinding
+
+API_KEY = "django-arch-check"
 
 VALID_DETECTORS: Final[tuple[str, ...]] = (
     "fat_models",
@@ -49,6 +53,7 @@ VALID_DETECTORS: Final[tuple[str, ...]] = (
     "n_plus_one",
     "migration_safety",
     "n1_serializer_risk",
+    "secret_leakage",
 )
 
 
@@ -70,12 +75,15 @@ class AnalysisResult:
     fat_models: list[FatModelFinding] = field(default_factory=list)
     god_apps: list[GodAppFinding] = field(default_factory=list)
     circular_imports: list[CircularImportFinding] = field(default_factory=list)
-    missing_service_layer: list[MissingServiceLayerFinding] = field(default_factory=list)
+    missing_service_layer: list[MissingServiceLayerFinding] = field(
+        default_factory=list
+    )
     celery_tasks: list[CeleryTaskFinding] = field(default_factory=list)
     direct_sql: list[DirectSQLFinding] = field(default_factory=list)
     n_plus_one: list[NPlusOneFinding] = field(default_factory=list)
     migration_safety: list[MigrationSafetyFinding] = field(default_factory=list)
     n1_serializer_risk: list[N1SerializerFinding] = field(default_factory=list)
+    secret_leakage: list[SecretLeakageFinding] = field(default_factory=list)
     skipped_detectors: tuple[str, ...] = ()
 
 
@@ -155,6 +163,11 @@ def run_analysis(
             []
             if "n1_serializer_risk" in ignored_set
             else n1_serializer_risk.detect(project_path, ignore_paths=ignore_paths)
+        ),
+        secret_leakage=(
+            []
+            if "secret_leakage" in ignored_set
+            else secret_leakage.detect(project_path, ignore_paths=ignore_paths)
         ),
         skipped_detectors=tuple(
             detector for detector in VALID_DETECTORS if detector in ignored_set

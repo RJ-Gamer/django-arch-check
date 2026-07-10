@@ -5,6 +5,27 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.0] - 2026-06-10
+
+### Added
+
+- Added `secret_leakage` detector — the 10th detector. It flags three categories of credential and configuration exposure risk using pure AST analysis:
+  - **Hardcoded secrets** (`critical`): string literals assigned to names matching ~22 patterns including `SECRET_KEY`, `API_KEY`, `PASSWORD`, `AUTH_TOKEN`, `STRIPE_KEY`, `JWT_SECRET`, `AWS_SECRET`, and others. Empty strings, `<placeholder>` values, and `os.environ` references are ignored.
+  - **Logged secrets** (`warning`): calls to `logger.debug/info/warning/error/critical/exception`, `print`, `log`, or `write` whose arguments reference a secret-named variable, attribute, or f-string interpolation.
+  - **DEBUG = True** (`critical` in `settings*.py` / `*settings.py`, `warning` elsewhere): Django's debug flag left enabled, which exposes full tracebacks and settings values in HTTP error responses.
+- Added `secret_leakage` to `VALID_DETECTORS`, `AnalysisResult`, the CLI text printer, HTML report sections, score weights (`critical = 9.0`, `warning = 3.0`), JSON output, and SARIF rule set.
+- Added animated SVG semi-circle score meter to the HTML report hero card. The arc sweeps from left to right proportional to the health score on page load, using a CSS `stroke-dashoffset` transition with a `cubic-bezier` easing curve. Color tracks the existing score band (green / yellow / red).
+- Added `tests/test_secret_leakage.py` with 61 tests across four classes covering all 22 secret name patterns, all logging call variants, DEBUG severity by filename, line number accuracy, false-positive suppression (empty strings, placeholders, env-var references, non-string values), annotated assignments, f-strings, attribute access, `--ignore-path` respect, syntax-error resilience, and multi-file / combined scenarios.
+
+### Fixed
+
+- Fixed HTML report finding cards for `secret_leakage` incorrectly rendering as "Possible N+1 query risk" with "Signal: Potential N+1 query pattern" detail rows. The `_finding_title`, `_finding_summary`, and `_finding_rows` functions in `report.py` now check for `kind`/`detail` fields before the generic `line_number` fallback that was previously matching first.
+- Fixed `_finding_message` in `serializers.py` applying the N+1 fallback message to `secret_leakage` findings in JSON and SARIF output for the same reason.
+
+### Tests
+
+- Test count: 336 passing.
+
 ## [v1.0.0] - 2026-06-09
 
 ### Added

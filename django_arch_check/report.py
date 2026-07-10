@@ -67,6 +67,7 @@ _DETECTOR_WEIGHTS: dict[str, dict[str, float]] = {
     "fat_models": {"critical": 2.0, "warning": 1.0},
     # TODO: Tune n1_serializer_risk weight after confirming detector in production.
     "n1_serializer_risk": {"error": 3.0, "warning": 1.5},
+    "secret_leakage": {"critical": 9.0, "warning": 3.0},
 }
 
 # Maximum findings counted per detector — prevents a single noisy detector
@@ -93,6 +94,7 @@ _SECTIONS: list[tuple[str, str]] = [
     ("n_plus_one", "N+1 Query Risks"),
     ("migration_safety", "Migration Safety"),
     ("n1_serializer_risk", "N+1 Serializer Risk"),
+    ("secret_leakage", "Secret Leakage"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -366,6 +368,8 @@ def _hero_insights(result: AnalysisResult) -> list[tuple[str, str]]:
             text = f"Task reliability gap — {len(findings)} task(s) missing retry"
         elif detector_id == "n1_serializer_risk":
             text = f"Serializer N+1 risk — {len(findings)} pattern(s) detected"
+        elif detector_id == "secret_leakage":
+            text = f"Secret leakage risk — {len(findings)} exposure(s) detected"
         else:
             text = f"{title} — {len(findings)} finding(s)"
 
@@ -419,6 +423,10 @@ def _finding_title(finding: object) -> str:
     if hasattr(finding, "detector") and getattr(finding, "detector") == "N1SerializerRisk":
         msg = str(getattr(finding, "message", ""))
         return _e(msg[:80] + "…" if len(msg) > 80 else msg)
+    if hasattr(finding, "kind") and hasattr(finding, "detail"):
+        kind = getattr(finding, "kind")
+        label = {"hardcoded_secret": "Hardcoded secret", "logged_secret": "Secret logged", "debug_true": "DEBUG = True"}.get(kind, kind)
+        return _e(label)
     if hasattr(finding, "class_name"):
         return f"{_e(getattr(finding, 'class_name'))}"
     if hasattr(finding, "view_name"):
@@ -445,6 +453,9 @@ def _finding_summary(finding: object) -> str:
 
     if hasattr(finding, "detector") and getattr(finding, "detector") == "N1SerializerRisk":
         return f"line {_e(str(getattr(finding, 'line', '?')))}"
+
+    if hasattr(finding, "kind") and hasattr(finding, "detail"):
+        return f"line {_e(str(getattr(finding, 'line_number', '?')))} · {_e(getattr(finding, 'detail'))}"
 
     if hasattr(finding, "class_name") and hasattr(finding, "method_count"):
         return f"{getattr(finding, 'method_count')} methods"
@@ -493,6 +504,18 @@ def _finding_summary(finding: object) -> str:
 
 
 def _finding_rows(finding: object, detector_title: str) -> list[tuple[str, str]]:
+    if hasattr(finding, "kind") and hasattr(finding, "detail"):
+        kind = getattr(finding, "kind")
+        label = {"hardcoded_secret": "Hardcoded secret", "logged_secret": "Secret logged", "debug_true": "DEBUG = True"}.get(kind, kind)
+        return [
+            ("Detector", _e(detector_title)),
+            ("Severity", _e(str(getattr(finding, "severity", "warning")).upper())),
+            ("File", _e(str(getattr(finding, "file_path", "")))),
+            ("Line", _e(str(getattr(finding, "line_number", "")))),
+            ("Issue", _e(label)),
+            ("Detail", _e(str(getattr(finding, "detail", "")))),
+        ]
+
     rows: list[tuple[str, str]] = [
         ("Detector", _e(detector_title)),
         ("Severity", _e(str(getattr(finding, "severity", "warning")).upper())),
@@ -1038,19 +1061,37 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
       mask-image:radial-gradient(circle, black 52%, transparent 92%);
     }}
     .orbit-score {{
-      position:absolute; inset:0; display:grid; place-items:center;
+      position:absolute; inset:0; display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
       font-family:var(--mono); text-align:center;
     }}
-    .orbit-score strong {{
-      display:block; font-size:4.4rem; line-height:1; color:{color}; letter-spacing:-.05em;
+    .orbit-meter {{
+      position:relative; width:200px; height:110px; flex-shrink:0;
     }}
-    .orbit-score span {{
-      display:block; margin-top:8px; font-size:12px; letter-spacing:.1em;
-      color:var(--mu2); text-transform:uppercase;
+    .orbit-meter svg {{ width:100%; height:100%; overflow:visible; }}
+    .meter-track {{
+      fill:none; stroke:var(--br2); stroke-width:10; stroke-linecap:round;
     }}
-    .orbit-score em {{
-      display:inline-block; margin-top:10px; padding:3px 10px; border-radius:999px;
+    .meter-fill {{
+      fill:none; stroke:{color}; stroke-width:10; stroke-linecap:round;
+      filter:drop-shadow(0 0 6px color-mix(in srgb, {color} 55%, transparent));
+      transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1) .3s;
+    }}
+    .orbit-num {{
+      position:absolute; bottom:0; left:50%; transform:translateX(-50%);
+      font-size:3.2rem; font-weight:900; line-height:1; color:{color};
+      letter-spacing:-.05em;
+      text-shadow:0 0 28px color-mix(in srgb, {color} 45%, transparent);
+    }}
+    .orbit-score-meta {{
+      margin-top:14px; display:flex; flex-direction:column; align-items:center; gap:6px;
+    }}
+    .orbit-score-meta span {{
+      font-size:11px; letter-spacing:.1em; color:var(--mu2); text-transform:uppercase;
+    }}
+    .orbit-score-meta em {{
       font-style:normal; font-size:11px; font-weight:800; color:{color};
+      padding:3px 10px; border-radius:999px;
       border:1px solid color-mix(in srgb, {color} 45%, transparent);
       background:color-mix(in srgb, {color} 12%, transparent);
     }}
@@ -1285,8 +1326,18 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
       <div class="hero-side" aria-hidden="true">
         <div class="hero-orbit">
           <div class="orbit-score">
-            <div>
-              <strong>{score}</strong>
+            <div class="orbit-meter">
+              <svg viewBox="0 0 200 110" aria-hidden="true">
+                <path class="meter-track"
+                  d="M 10 100 A 90 90 0 0 1 190 100"/>
+                <path class="meter-fill" id="meter-arc"
+                  d="M 10 100 A 90 90 0 0 1 190 100"
+                  stroke-dasharray="282.7"
+                  stroke-dashoffset="282.7"/>
+              </svg>
+              <span class="orbit-num">{score}</span>
+            </div>
+            <div class="orbit-score-meta">
               <span>Health Score</span>
               <em>{_e(grade)} · {_e(label)}</em>
             </div>
@@ -1405,6 +1456,20 @@ def generate_html(result: AnalysisResult, project_path: str) -> str:
     }}, {{ threshold: 0.12 }});
 
     document.querySelectorAll('[data-reveal]').forEach((el) => observer.observe(el));
+
+    (function() {{
+      var arc = document.getElementById('meter-arc');
+      if (!arc) return;
+      var score = {score};
+      var total = 282.7;
+      var offset = total - (score / 100) * total;
+      // Defer so the CSS transition animates from the initial dashoffset
+      requestAnimationFrame(function() {{
+        requestAnimationFrame(function() {{
+          arc.style.strokeDashoffset = offset;
+        }});
+      }});
+    }})();
   </script>
 </body>
 </html>"""

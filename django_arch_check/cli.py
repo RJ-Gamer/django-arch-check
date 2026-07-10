@@ -297,6 +297,46 @@ def _print_n_plus_one(result: AnalysisResult) -> None:
     click.echo()
     click.echo(click.style(f"  Found {count} potential N+1 issue(s).", fg="yellow"))
 
+def _print_secret_leakage(result: AnalysisResult) -> None:
+    """Print secret-leakage findings and their section summary."""
+    findings = result.secret_leakage
+
+    click.echo()
+    click.echo(click.style("── Secret Leakage ──────────────────────────", bold=True))
+
+    if _is_skipped(result, "secret_leakage"):
+        click.echo(click.style("  ⊘ Skipped (--ignore flag)", fg="cyan"))
+        return
+
+    if not findings:
+        click.echo(click.style("  No secret leakage risks found.", fg="green"))
+        return
+
+    _KIND_LABEL = {
+        "hardcoded_secret": "hardcoded secret",
+        "logged_secret": "secret logged",
+        "debug_true": "DEBUG = True",
+    }
+
+    for f in findings:
+        label = _severity_label(f.severity)
+        kind_text = _KIND_LABEL.get(f.kind, f.kind)
+        click.echo(
+            f"  {label} {f.file_path}:{f.line_number} → "
+            + click.style(kind_text, bold=True)
+            + f" — {f.detail}"
+        )
+
+    count = len(findings)
+    click.echo()
+    click.echo(
+        click.style(
+            f"  Found {count} secret leakage risk(s).",
+            fg="red" if any(f.severity == "critical" for f in findings) else "yellow",
+        )
+    )
+
+
 def _print_migration_safety(result: AnalysisResult) -> None:
     """Print migration safety findings and their section summary."""
     findings = result.migration_safety
@@ -371,6 +411,7 @@ def _print_text_result(result: AnalysisResult) -> None:
     _print_n_plus_one(result)
     _print_migration_safety(result)
     _print_n1_serializer_risk(result)
+    _print_secret_leakage(result)
 
 
 def _finding_key(finding: object) -> str:

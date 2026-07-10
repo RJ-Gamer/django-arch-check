@@ -1,0 +1,3 @@
+fat-model-threshold = 20
+god-app-threshold = 35
+ignore-path = ["legacy/", "archive/"]

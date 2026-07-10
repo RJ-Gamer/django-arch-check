@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-1.0.0-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.1.0-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-STABLE-brightgreen?style=for-the-badge)
-![Detectors](https://img.shields.io/badge/DETECTORS-9-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-275%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Detectors](https://img.shields.io/badge/DETECTORS-10-orange?style=for-the-badge)
+![Tests](https://img.shields.io/badge/TESTS-336%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -23,6 +23,7 @@ It scans source code statically and flags structural issues before they become e
 - N+1 query risks
 - N+1 serializer risks
 - Migration safety risks
+- Secret key / credential leakage
 
 ```text
 Analyzing: /home/user/myproject
@@ -163,7 +164,7 @@ The baseline file should be committed to version control. When `--baseline` is a
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v1.0.0
+    rev: v1.1.0
     hooks:
       - id: django-arch-check
 ```
@@ -175,7 +176,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v1.0.0
+    rev: v1.1.0
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -203,11 +204,12 @@ Valid detector names:
 - `n_plus_one`
 - `migration_safety`
 - `n1_serializer_risk`
+- `secret_leakage`
 
 If an invalid detector name is passed, the CLI exits with a clear error:
 
 ```text
-Error: Unknown detector 'fat_modelz'. Valid detectors are: fat_models, god_apps, circular_imports, missing_service_layer, celery_tasks, direct_sql, n_plus_one, migration_safety, n1_serializer_risk
+Error: Unknown detector 'fat_modelz'. Valid detectors are: fat_models, god_apps, circular_imports, missing_service_layer, celery_tasks, direct_sql, n_plus_one, migration_safety, n1_serializer_risk, secret_leakage
 ```
 
 In HTML reports, skipped detectors are shown as:
@@ -478,6 +480,31 @@ Notes:
 - Includes code snippets in HTML, JSON, and SARIF output
 - Treats detector-level `error` findings as critical in aggregate report badges and score summaries
 
+### Secret Leakage
+
+Flags three categories of credential and configuration exposure risk.
+
+**Hardcoded secrets** — string literals assigned to names that suggest credentials:
+
+- Critical: variable name matches patterns like `SECRET_KEY`, `API_KEY`, `PASSWORD`, `AUTH_TOKEN`, `STRIPE_KEY`, `JWT_SECRET`, `AWS_SECRET`, and ~20 others
+
+**Logged secrets** — logging or print calls whose arguments reference a sensitive variable:
+
+- Warning: `logger.info(api_key)`, `print(password)`, `logger.debug(f"key={secret_key}")`, etc.
+- Detects `logger.debug/info/warning/error/critical/exception`, `print`, `log`, `write`
+- Catches direct variable references, attribute access, and f-string interpolation
+
+**DEBUG = True** — Django's debug flag left enabled:
+
+- Critical: in any file matching `settings*.py` or `*settings.py`
+- Warning: in any other Python file
+
+Notes:
+
+- Uses AST analysis only — never executes code
+- Ignores empty strings, `<placeholder>` values, and `os.environ` references
+- Skips `.venv`, `node_modules`, and other non-source directories
+
 ---
 
 ## HTML Report
@@ -537,6 +564,7 @@ Default detector weights:
 - `direct_sql` warning = `2`
 - `god_apps` critical = `3`, warning = `1.5`
 - `fat_models` critical = `2`, warning = `1`
+- `secret_leakage` weights: critical = `9`, warning = `3`
 - `n1_serializer_risk` error = `3`, warning = `1.5`
 
 Grades:
@@ -677,6 +705,7 @@ That makes it safe to run in CI, pre-commit hooks, and partially broken repos.
 
 - Circular import detection only covers top-level imports
 - `--ignore-path` uses substring matching, not glob syntax
+- Secret leakage detection is heuristic — it matches variable names and string literals, not runtime values
 - Missing service layer detection only scans files literally named `views.py`
 - N+1 detection is heuristic and only reasons within a single function scope
 - Serializer N+1 detection is heuristic and relies on class-name and field-name matching across serializers, models, and viewsets
@@ -718,7 +747,8 @@ django_arch_check/
     ├── direct_sql.py
     ├── migration_safety.py
     ├── n1_serializer_risk.py
-    └── n_plus_one.py
+    ├── n_plus_one.py
+    └── secret_leakage.py
 
 tests/
 ├── conftest.py
@@ -733,6 +763,7 @@ tests/
 ├── test_n1_serializer_risk.py
 ├── test_n_plus_one.py
 ├── test_report.py
+├── test_secret_leakage.py
 ├── test_watcher.py
 └── test_cli.py
 ```
@@ -758,7 +789,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `1.0.0`.
+The current release version is `1.1.0`.
 
 ---
 
