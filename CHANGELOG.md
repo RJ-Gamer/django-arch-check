@@ -5,6 +5,19 @@ All notable changes to `django-arch-check` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.2] - 2026-07-21
+### Fixed
+
+- Fixed `secret_leakage` detector producing false positives on error-message and validation-message constants whose variable names contain secret-like words (e.g. `PASSWORD_ERROR = "Username or password is incorrect"`, `PASSWORD_HELP = "Must be at least 8 characters."`). Two suppression layers are now applied before a `hardcoded_secret` finding is emitted:
+  - **Value heuristics** — strings are automatically skipped when they contain 3 or more spaces (sentence structure), end with sentence punctuation (`.` `!` `?` `…`), exceed 100 characters, or contain unambiguous validation/UI words (`invalid`, `incorrect`, `required`, `must be`, `cannot`, `does not`, `please`, `provide`, `missing`, `forbidden`, `unauthorized`, `confirm`, `characters`, `digits`, `letters`, `username`). The word list is deliberately narrow to avoid suppressing real credentials.
+  - **Inline suppress comment** — adding `# django-arch-check: ignore` on the assignment line unconditionally skips it, consistent with the existing pattern in the `migration_safety` detector. Applies to both `hardcoded_secret` and `debug_true` findings.
+
+### Tests
+
+- Added `TestValueHeuristics` (9 tests) covering sentence-with-spaces suppression, sentence-ending punctuation suppression, message-word suppression, long-string suppression, and confirmation that short tokens without spaces are still flagged.
+- Added `TestInlineSuppressComment` (5 tests) covering secret suppression, `DEBUG = True` suppression, line-scoped suppression (comment on line N does not suppress line N+1), developer-override of a genuine finding, and heuristic-alone path.
+- Test count: 350 passing.
+
 ## [v1.1.1] - 2026-06-10
 
 ### Fixed

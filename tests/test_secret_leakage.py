@@ -351,3 +351,123 @@ class TestCombined:
         findings = detect(proj.path)
         files = {f.file_path for f in findings}
         assert len(files) == 2
+
+
+# ---------------------------------------------------------------------------
+# Value heuristics (false-positive suppression)
+# ---------------------------------------------------------------------------
+
+
+class TestValueHeuristics:
+    def test_sentence_with_spaces_not_flagged(self, proj: ProjectBuilder) -> None:
+        """PASSWORD_ERROR = 'Username or password is incorrect' has 4 spaces."""
+        proj.write(
+            "app/messages.py",
+            'PASSWORD_ERROR = "Username or password is incorrect"\n',
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_sentence_ending_with_period_not_flagged(self, proj: ProjectBuilder) -> None:
+        proj.write(
+            "app/messages.py",
+            'PASSWORD_HELP = "Your password must be at least 8 characters."\n',
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_sentence_ending_with_exclamation_not_flagged(self, proj: ProjectBuilder) -> None:
+        proj.write(
+            "app/messages.py",
+            'PASSWORD_SUCCESS = "Password changed successfully!"\n',
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_message_word_triggers_suppression(self, proj: ProjectBuilder) -> None:
+        """Contains 'invalid' -> suppressed by message-word heuristic."""
+        proj.write("app/errors.py", 'PASSWORD_INVALID = "invalid"\n')
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_long_string_not_flagged(self, proj: ProjectBuilder) -> None:
+        long_msg = "x" * 101
+        proj.write("app/messages.py", f'SECRET_HELP = "{long_msg}"\n')
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_short_token_without_spaces_still_flagged(self, proj: ProjectBuilder) -> None:
+        """A short random-looking value with no spaces must still be flagged."""
+        proj.write("app/settings.py", 'SECRET_KEY = "xK9mP2qR"\n')
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert len(findings) == 1
+
+    def test_two_word_value_still_flagged(self, proj: ProjectBuilder) -> None:
+        """Two words (1 space) is below the 3-space threshold -> still flagged."""
+        proj.write("app/settings.py", 'API_KEY = "live secret"\n')
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert len(findings) == 1
+
+    def test_required_word_suppresses(self, proj: ProjectBuilder) -> None:
+        proj.write("app/validators.py", 'PASSWORD_REQUIRED = "required"\n')
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_incorrect_word_suppresses(self, proj: ProjectBuilder) -> None:
+        proj.write("app/validators.py", 'PASSWORD_MSG = "incorrect"\n')
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Inline suppress comment
+# ---------------------------------------------------------------------------
+
+
+class TestInlineSuppressComment:
+    def test_ignore_comment_suppresses_hardcoded_secret(self, proj: ProjectBuilder) -> None:
+        proj.write(
+            "app/constants.py",
+            'PASSWORD_MIN_MSG = "too short"  # django-arch-check: ignore\n',
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_ignore_comment_suppresses_debug_true(self, proj: ProjectBuilder) -> None:
+        proj.write(
+            "app/settings_test.py",
+            "DEBUG = True  # django-arch-check: ignore\n",
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "debug_true"]
+        assert findings == []
+
+    def test_ignore_comment_only_suppresses_its_own_line(self, proj: ProjectBuilder) -> None:
+        """The comment on line 1 must not suppress the finding on line 2."""
+        source = (
+            'PASSWORD_RESET_MSG = "Reset link sent."  # django-arch-check: ignore\n'
+            'SECRET_KEY = "real-secret-abc123"\n'
+        )
+        proj.write("app/settings.py", source)
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert len(findings) == 1
+        assert findings[0].line_number == 2
+
+    def test_ignore_comment_on_real_secret_suppresses_it(self, proj: ProjectBuilder) -> None:
+        """Developer can suppress a genuine finding they know is safe."""
+        proj.write(
+            "app/settings.py",
+            'SECRET_KEY = "real-abc123"  # django-arch-check: ignore\n',
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []
+
+    def test_without_ignore_comment_sentence_suppressed_by_heuristic(
+        self, proj: ProjectBuilder
+    ) -> None:
+        """Heuristic alone suppresses without needing the comment."""
+        proj.write(
+            "app/messages.py",
+            'PASSWORD_ERROR = "Username or password is incorrect"\n',
+        )
+        findings = [f for f in detect(proj.path) if f.kind == "hardcoded_secret"]
+        assert findings == []

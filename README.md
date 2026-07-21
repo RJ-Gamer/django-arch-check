@@ -1,12 +1,12 @@
 # django-arch-check
 
 ![PyPI](https://img.shields.io/badge/PYPI-django--arch--check-4f8ef7?style=for-the-badge&logo=pypi&logoColor=white)
-![Version](https://img.shields.io/badge/VERSION-1.1.1-4f8ef7?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.1.2-4f8ef7?style=for-the-badge)
 ![Python](https://img.shields.io/badge/PYTHON-3.11%2B-4f8ef7?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/LICENSE-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/STATUS-STABLE-brightgreen?style=for-the-badge)
 ![Detectors](https://img.shields.io/badge/DETECTORS-10-orange?style=for-the-badge)
-![Tests](https://img.shields.io/badge/TESTS-336%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/TESTS-350%20PASSING-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
 ![PRs](https://img.shields.io/badge/PRS-WELCOME-blueviolet?style=for-the-badge&logo=github)
 [![Sponsor](https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/RJ-Gamer)
 
@@ -164,7 +164,7 @@ The baseline file should be committed to version control. When `--baseline` is a
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v1.1.1
+    rev: v1.1.2
     hooks:
       - id: django-arch-check
 ```
@@ -176,7 +176,7 @@ You can still pass your own CLI options from `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/RJ-Gamer/django-arch-check
-    rev: v1.1.1
+    rev: v1.1.2
     hooks:
       - id: django-arch-check
         args: [--ignore-path, legacy/]
@@ -499,6 +499,15 @@ Flags three categories of credential and configuration exposure risk.
 - Critical: in any file matching `settings*.py` or `*settings.py`
 - Warning: in any other Python file
 
+**False-positive suppression** — two layers prevent noise from error-message constants like `PASSWORD_ERROR = "Username or password is incorrect"`:
+
+- Value heuristics: strings with 3+ spaces, sentence-ending punctuation (`.` `!` `?`), length over 100 characters, or common validation words (`invalid`, `incorrect`, `required`, `must be`, `unauthorized`, etc.) are automatically skipped
+- Inline suppress comment: add `# django-arch-check: ignore` on the assignment line to unconditionally skip it:
+
+```python
+PASSWORD_RESET_MSG = "Check your email."  # django-arch-check: ignore
+```
+
 Notes:
 
 - Uses AST analysis only — never executes code
@@ -789,7 +798,7 @@ If you are proposing a larger detector or behavior change, opening an issue firs
 
 ## Version
 
-The current release version is `1.1.1`.
+The current release version is `1.1.2`.
 
 ---
 

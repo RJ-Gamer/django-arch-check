@@ -2,14 +2,30 @@
 
 Scans Python source files for three categories of secret exposure risk:
 
-1. Hardcoded secrets — string literals assigned to names that suggest
+1. Hardcoded secrets -- string literals assigned to names that suggest
    credentials (SECRET_KEY, API_KEY, PASSWORD, TOKEN, etc.).
 
-2. Logged secrets — logging calls (logger.info, print, etc.) whose
+2. Logged secrets -- logging calls (logger.info, print, etc.) whose
    arguments reference variable names that suggest sensitive data.
 
-3. DEBUG = True — Django's DEBUG flag left enabled, which causes full
+3. DEBUG = True -- Django's DEBUG flag left enabled, which causes full
    tracebacks and settings values to be exposed in HTTP error responses.
+
+False-positive suppression
+--------------------------
+Two layers prevent noise:
+
+a) Value heuristics -- a string is skipped when it looks like a human-readable
+   message rather than a credential:
+   - 3 or more spaces  ("Username or password is incorrect")
+   - ends with sentence punctuation  (".", "!", "?", "...")
+   - longer than 100 characters
+   - contains common message/validation words (invalid, incorrect, required, ...)
+
+b) Inline suppress comment -- add ``# django-arch-check: ignore`` on the
+   assignment line to unconditionally skip it:
+
+       PASSWORD_RESET_MSG = "Check your email."  # django-arch-check: ignore
 
 Severity:
     - critical: hardcoded secret or DEBUG = True in settings files
@@ -76,6 +92,25 @@ _LOG_CALL_NAMES: frozenset[str] = frozenset(
 # Settings file name patterns.
 _SETTINGS_FILE_RE = re.compile(r"settings.*\.py$", re.IGNORECASE)
 
+# Words that strongly suggest a human-readable message rather than a credential.
+# Deliberately narrow: only words that are unambiguously message/validation copy
+# and would never appear in a real token or key.
+_MESSAGE_WORDS_RE = re.compile(
+    r"\b(invalid|incorrect|required|must be|cannot|already exists|"
+    r"does not|please|provide|missing|forbidden|"
+    r"unauthorized|confirm|characters?|digits?|letters?|username)",
+    re.IGNORECASE,
+)
+
+# Sentence-ending punctuation that signals a human-readable string.
+_SENTENCE_ENDINGS: tuple[str, ...] = (".", "!", "?", "\u2026", "...")
+
+# Maximum length a real credential is expected to be.
+_MAX_CREDENTIAL_LENGTH = 100
+
+# Minimum spaces in a string before it is treated as a sentence.
+_MIN_SPACES_FOR_SENTENCE = 3
+
 
 # ---------------------------------------------------------------------------
 # AST helpers
@@ -87,13 +122,42 @@ def _is_non_empty_string(node: ast.expr) -> bool:
     if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
         return False
     val = node.value.strip()
-    # Ignore empty strings and obvious placeholders.
     if not val or val.startswith("<") or val in {"...", "CHANGE_ME", "TODO", "FIXME"}:
         return False
-    # Ignore env-var-style references like "os.environ.get(...)"
     if val.startswith("$") or val.startswith("%"):
         return False
     return True
+
+
+def _looks_like_message(value: str) -> bool:
+    """Return True when *value* looks like a human-readable message, not a credential.
+
+    Any one of the following is sufficient to suppress the finding:
+    - 3 or more spaces  -> likely a sentence
+    - ends with sentence punctuation  -> likely a sentence
+    - longer than _MAX_CREDENTIAL_LENGTH chars  -> too long to be a token
+    - contains common message/validation words  -> UI copy, not a secret
+    """
+    if len(value) > _MAX_CREDENTIAL_LENGTH:
+        return True
+    if value.count(" ") >= _MIN_SPACES_FOR_SENTENCE:
+        return True
+    if value.rstrip().endswith(_SENTENCE_ENDINGS):
+        return True
+    if _MESSAGE_WORDS_RE.search(value):
+        return True
+    return False
+
+
+def _has_ignore_comment(source_lines: list[str], lineno: int) -> bool:
+    """Return True when the source line carries a suppress comment.
+
+    *lineno* is 1-based (as reported by the AST).
+    """
+    idx = lineno - 1
+    if 0 <= idx < len(source_lines):
+        return "# django-arch-check: ignore" in source_lines[idx]
+    return False
 
 
 def _assignment_targets_name(node: ast.Assign | ast.AnnAssign) -> list[str]:
@@ -127,7 +191,6 @@ def _node_references_secret(node: ast.expr) -> str | None:
         return node.id
     if isinstance(node, ast.Attribute) and _SECRET_NAME_RE.search(node.attr):
         return node.attr
-    # f-string: check each FormattedValue
     if isinstance(node, ast.JoinedStr):
         for part in ast.walk(node):
             if isinstance(part, ast.Name) and _SECRET_NAME_RE.search(part.id):
@@ -152,36 +215,41 @@ def _scan_file(full_path: str, rel_path: str) -> list[SecretLeakageFinding]:
     except (OSError, UnicodeDecodeError, SyntaxError):
         return findings
 
+    source_lines = source.splitlines()
+
     for node in ast.walk(tree):
-        # ── 1. Hardcoded secrets & DEBUG = True ───────────────────────────
+        # -- 1. Hardcoded secrets & DEBUG = True ------------------------------
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            value = node.value if isinstance(node, ast.AnnAssign) else node.value
+            value = node.value
             if value is None:
+                continue
+            # Inline suppress comment skips the entire assignment.
+            if _has_ignore_comment(source_lines, node.lineno):
                 continue
             for name in _assignment_targets_name(node):
                 if name == "DEBUG":
                     if isinstance(value, ast.Constant) and value.value is True:
-                        findings.append(
-                            SecretLeakageFinding(
-                                file_path=rel_path,
-                                line_number=node.lineno,
-                                kind="debug_true",
-                                detail="DEBUG = True",
-                                severity="critical" if is_settings else "warning",
-                            )
-                        )
-                elif _SECRET_NAME_RE.search(name) and _is_non_empty_string(value):
-                    findings.append(
-                        SecretLeakageFinding(
+                        findings.append(SecretLeakageFinding(
                             file_path=rel_path,
                             line_number=node.lineno,
-                            kind="hardcoded_secret",
-                            detail=name,
-                            severity="critical",
-                        )
-                    )
+                            kind="debug_true",
+                            detail="DEBUG = True",
+                            severity="critical" if is_settings else "warning",
+                        ))
+                elif _SECRET_NAME_RE.search(name) and _is_non_empty_string(value):
+                    # Value heuristic: skip strings that look like UI messages.
+                    assert isinstance(value, ast.Constant)
+                    if _looks_like_message(value.value):
+                        continue
+                    findings.append(SecretLeakageFinding(
+                        file_path=rel_path,
+                        line_number=node.lineno,
+                        kind="hardcoded_secret",
+                        detail=name,
+                        severity="critical",
+                    ))
 
-        # ── 2. Logged secrets ─────────────────────────────────────────────
+        # -- 2. Logged secrets ------------------------------------------------
         elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
             call = node.value
             if _call_func_name(call) in _LOG_CALL_NAMES:
@@ -191,15 +259,13 @@ def _scan_file(full_path: str, rel_path: str) -> list[SecretLeakageFinding]:
                 for arg in all_args:
                     secret_name = _node_references_secret(arg)
                     if secret_name:
-                        findings.append(
-                            SecretLeakageFinding(
-                                file_path=rel_path,
-                                line_number=node.lineno,
-                                kind="logged_secret",
-                                detail=secret_name,
-                                severity="warning",
-                            )
-                        )
+                        findings.append(SecretLeakageFinding(
+                            file_path=rel_path,
+                            line_number=node.lineno,
+                            kind="logged_secret",
+                            detail=secret_name,
+                            severity="warning",
+                        ))
                         break  # one finding per call site
 
     return findings
